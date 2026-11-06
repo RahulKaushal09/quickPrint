@@ -107,6 +107,7 @@ export function Dot({ on, pulse }: { on: boolean; pulse?: boolean }) {
 
 const STATUS_TONE: Record<JobStatus, Parameters<typeof Badge>[0]['tone']> = {
   draft: 'neutral',
+  awaiting_cash: 'warn',
   queued: 'warn',
   sent: 'cyan',
   printing: 'cyan',

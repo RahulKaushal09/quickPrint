@@ -6,6 +6,7 @@ export interface RateCard {
   bwPerPage: number;
   colorPerPage: number;
   colorEnabled: boolean;
+  duplexEnabled?: boolean;
 }
 
 export interface Quote {
@@ -18,6 +19,8 @@ export interface Quote {
 
 export const LIMITS = {
   maxFileBytes: 25 * 1024 * 1024,
+  maxTotalBytes: 50 * 1024 * 1024,
+  maxFiles: 30,
   maxPages: 300,
   maxCopies: 50,
   /** Razorpay will not create an order below ₹1. */

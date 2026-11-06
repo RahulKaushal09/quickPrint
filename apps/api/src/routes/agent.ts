@@ -38,7 +38,7 @@ agentRoutes.get('/jobs/:id/file', async (req, res) => {
   const d = await device(req);
   const job = await Job.findOne({ _id: req.params.id, deviceId: d._id, status: { $in: ['sent', 'printing'] } });
   if (!job || !job.file.key) throw new HttpError(404, 'Job not available for this PC');
-  await sendPrintFile(res, job.file, job.rotation);
+  await sendPrintFile(res, job);
 });
 
 agentRoutes.get('/test-page', async (req, res) => {

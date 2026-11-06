@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowRight, Check, CreditCard, Download, FileStack, IndianRupee, Inbox, MonitorSmartphone, Printer, QrCode, TriangleAlert } from 'lucide-react';
+import { ArrowRight, Banknote, Check, CreditCard, Download, FileStack, IndianRupee, Inbox, MonitorSmartphone, Printer, QrCode, TriangleAlert } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { PageHeader } from '@/components/app-shell';
@@ -13,6 +13,7 @@ import { useShop } from './shop-context';
 interface Overview {
   today: { jobs: number; pages: number; revenue: number; failed: number };
   open: number;
+  cashWaiting: number;
   devices: { id: string; name: string; online: boolean; lastSeenAt?: string; printers: { name: string; status: string }[] }[];
 }
 
@@ -40,6 +41,19 @@ export default function OverviewPage() {
     return () => clearInterval(t);
   }, [load]);
 
+  async function setCashAuto(autoPrint: boolean) {
+    setSaving(true);
+    try {
+      const r = await api('/api/shop', { method: 'PATCH', json: { cash: { ...shop.cash, autoPrint } } });
+      setShop(r.shop);
+      toast(autoPrint ? 'Cash orders will print straight away' : 'Cash orders will wait for you to accept the money');
+    } catch (e) {
+      toast((e as Error).message, 'bad');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function toggleAccepting(v: boolean) {
     setSaving(true);
     try {
@@ -56,7 +70,7 @@ export default function OverviewPage() {
   const online = data?.devices.some((d) => d.online) ?? false;
   const hasPrinter = data?.devices.some((d) => d.online && d.printers.length) ?? false;
   const setupSteps = [
-    { done: (data?.devices.length ?? 0) > 0, label: 'Install the agent on your shop PC', href: '/dashboard/printers', icon: Download },
+    { done: (data?.devices.length ?? 0) > 0, label: 'Install the app on your shop PC', href: '/dashboard/printers', icon: Download },
     { done: hasPrinter, label: 'Connect it and check your printers', href: '/dashboard/printers', icon: Printer },
     { done: shop.printers.bw.length > 0 || shop.printers.color.length > 0, label: 'Choose which printers do B/W and colour', href: '/dashboard/printers', icon: MonitorSmartphone },
     { done: Boolean(shop.razorpay?.keyId), label: 'Connect your Razorpay account', href: '/dashboard/payments', icon: CreditCard },
@@ -80,10 +94,30 @@ export default function OverviewPage() {
         }
       />
 
+      {shop.cash.enabled && (
+        <Card className="mb-4 flex items-center gap-4 p-4 sm:px-5">
+          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-ok-soft text-ok">
+            <Banknote className="size-5" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="font-bold">Print cash orders directly</p>
+            <p className="text-sm text-ink-mute">{shop.cash.autoPrint ? 'On: cash orders print at once, before you collect the money.' : 'Off: cash orders wait until you tap Cash received.'}</p>
+          </div>
+          <Switch checked={shop.cash.autoPrint} onChange={setCashAuto} disabled={saving} label="Print cash orders directly" />
+        </Card>
+      )}
+
+      {Boolean(data?.cashWaiting) && (
+        <Link href="/dashboard/jobs" className="mb-4 flex items-center justify-between rounded-2xl bg-yellow px-5 py-3.5 font-bold text-ink">
+          {data!.cashWaiting} cash order{data!.cashWaiting === 1 ? '' : 's'} waiting for you
+          <ArrowRight className="size-5" />
+        </Link>
+      )}
+
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
         <Stat label="Today's earnings" value={data ? rupees(data.today.revenue) : null} icon={<IndianRupee className="size-4" />} accent="ok" hint="Before Razorpay charges" />
-        <Stat label="Jobs today" value={data ? String(data.today.jobs) : null} icon={<Inbox className="size-4" />} accent="cyan" hint={data?.open ? `${data.open} in progress` : 'All caught up'} />
+        <Stat label="Jobs today" value={data ? String(data.today.jobs) : null} icon={<Inbox className="size-4" />} accent="cyan" hint={data?.open ? `${data.open} printing` : 'All caught up'} />
         <Stat label="Pages printed" value={data ? data.today.pages.toLocaleString('en-IN') : null} icon={<FileStack className="size-4" />} accent="magenta" hint="Today, all printers" />
         <Stat label="Issues" value={data ? String(data.today.failed) : null} icon={<TriangleAlert className="size-4" />} accent={data?.today.failed ? 'bad' : 'yellow'} hint={data?.today.failed ? 'Needs attention' : 'No problems'} />
       </div>

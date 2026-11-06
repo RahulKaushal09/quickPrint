@@ -1,14 +1,14 @@
 'use client';
 
-import { ArrowRight, Camera, Check, FileText, Lock, MapPin, RefreshCw, ShieldCheck, Trash2, Upload, WifiOff } from 'lucide-react';
+import { ArrowRight, Banknote, Camera, Check, CreditCard, FileText, Lock, MapPin, Plus, RefreshCw, ShieldCheck, Trash2, Upload, WifiOff } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { quote, type ColorMode } from '@seedhaprint/shared';
+import { quote, sheetsFor, type ColorMode, type PaymentMethod, type Sides } from '@seedhaprint/shared';
 import { Button, Card, Dot, Mark, Skeleton, Stepper } from '@/components/ui';
 import { api, ApiError, uploadFile } from '@/lib/api';
-import { bytes, cx, initials, plural, rupees } from '@/lib/format';
-import { DocumentPreview, type Rotation } from './document-preview';
+import { cx, initials, plural, rupees } from '@/lib/format';
 import { MockCheckout } from './mock-checkout';
+import { PagePicker, type PageItem } from './page-picker';
 
 interface Shop {
   code: string;
@@ -20,12 +20,14 @@ interface Shop {
   open: boolean;
   online: boolean;
   available: { bw: boolean; color: boolean };
+  duplex: { bw: boolean; color: boolean };
   payments: 'razorpay' | 'test' | 'none';
+  cash: boolean;
 }
 
 interface Draft {
   ref: string;
-  file: { name: string; pages: number };
+  file: { name: string; totalPages: number };
 }
 
 interface PublicConfig {
@@ -65,15 +67,15 @@ export function CustomerFlow({ code }: { code: string }) {
   const [cfg, setCfg] = useState<PublicConfig | null>(null);
   const [loadError, setLoadError] = useState('');
 
-  const [file, setFile] = useState<File | null>(null);
-  const [progress, setProgress] = useState(0);
-  const [processing, setProcessing] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [items, setItems] = useState<PageItem[]>([]);
+  const [uploading, setUploading] = useState<{ name: string; index: number; count: number; progress: number } | null>(null);
   const [uploadError, setUploadError] = useState('');
 
   const [mode, setMode] = useState<ColorMode>('bw');
+  const [sides, setSides] = useState<Sides>('single');
   const [copies, setCopies] = useState(1);
-  const [rotation, setRotation] = useState<Rotation>(0);
+  const [method, setMethod] = useState<PaymentMethod>('online');
   const [paying, setPaying] = useState(false);
   const [payError, setPayError] = useState('');
   const [mockOrder, setMockOrder] = useState<Order | null>(null);
@@ -99,60 +101,71 @@ export function CustomerFlow({ code }: { code: string }) {
     return () => clearInterval(t);
   }, [code, loadShop]);
 
-  async function choose(f: File | undefined) {
-    if (!f || !shop || !cfg) return;
+  /** Files go up one at a time; the first creates the job, the rest join it. */
+  async function addFiles(list: FileList | null) {
+    const files = Array.from(list ?? []);
+    if (!files.length || !shop || !cfg) return;
     setUploadError('');
-    if (f.size > cfg.limits.maxFileBytes) {
-      setUploadError('This file is larger than 25 MB. Please choose a smaller file.');
-      return;
+    let current = draft;
+    for (const [index, f] of files.entries()) {
+      if (f.size > cfg.limits.maxFileBytes) {
+        setUploadError(`${f.name} is larger than 25 MB, so it was skipped.`);
+        continue;
+      }
+      setUploading({ name: f.name, index: index + 1, count: files.length, progress: 0 });
+      try {
+        const path = current ? `/api/public/jobs/${current.ref}/files` : `/api/public/shops/${shop.code}/uploads`;
+        const next = await uploadFile<Draft>(path, f, (progress) => setUploading((u) => (u ? { ...u, progress } : u)));
+        const before = current?.file.totalPages ?? 0;
+        current = next;
+        setDraft(next);
+        setItems((old) => [...old, ...Array.from({ length: next.file.totalPages - before }, (_, i) => ({ p: before + i + 1, r: 0 as const, on: true }))]);
+      } catch (e) {
+        setUploadError(`${f.name}: ${(e as Error).message}`);
+      }
     }
-    setFile(f);
-    setDraft(null);
-    setProgress(0);
-    setProcessing(false);
-    try {
-      const d = await uploadFile<Draft>(`/api/public/shops/${shop.code}/uploads`, f, (p) => {
-        setProgress(p);
-        if (p >= 100) setProcessing(true);
-      });
-      setDraft(d);
-      setCopies(1);
-      setRotation(0);
-    } catch (e) {
-      setFile(null);
-      setUploadError((e as Error).message);
-    } finally {
-      setProcessing(false);
-    }
-  }
-
-  function reset() {
-    setFile(null);
-    setDraft(null);
-    setUploadError('');
-    setPayError('');
+    setUploading(null);
     if (pickRef.current) pickRef.current.value = '';
     if (cameraRef.current) cameraRef.current.value = '';
   }
 
-  // A print type whose printers are all offline can't be chosen; move off it if that happens mid-order.
+  function reset() {
+    setDraft(null);
+    setItems([]);
+    setCopies(1);
+    setUploadError('');
+    setPayError('');
+  }
+
+  const selected = items.filter((i) => i.on);
+  // A choice whose printer has gone offline can't stay selected.
   const canPrint = (m: ColorMode) => Boolean(shop?.available[m] && (m === 'bw' || shop.rates.colorEnabled));
+  const canDouble = Boolean(shop?.duplex[mode]);
+  const online = shop?.payments !== 'none';
   useEffect(() => {
     if (shop && !canPrint(mode)) {
       const other: ColorMode = mode === 'bw' ? 'color' : 'bw';
       if (canPrint(other)) setMode(other);
     }
+    if (shop && sides === 'double' && !canDouble) setSides('single');
+    if (shop && method === 'cash' && !shop.cash) setMethod('online');
+    if (shop && method === 'online' && !online && shop.cash) setMethod('cash');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shop, mode]);
-  const canPay = Boolean(shop?.open && shop.online && draft && shop.payments !== 'none' && canPrint(mode));
-  const q = draft && shop ? quote(shop.rates, mode, draft.file.pages, copies) : null;
+  }, [shop, mode, sides, method, online, canDouble]);
+
+  const canPay = Boolean(shop?.open && shop.online && draft && selected.length && !uploading && (method === 'cash' ? shop.cash : online) && canPrint(mode));
+  const q = selected.length && shop ? quote(shop.rates, mode, selected.length, copies) : null;
 
   async function pay() {
     if (!draft || !shop || !cfg) return;
     setPaying(true);
     setPayError('');
     try {
-      const order = await api<Order>(`/api/public/jobs/${draft.ref}/checkout`, { method: 'POST', json: { mode, copies, rotation } });
+      const order = await api<Order & { cash?: boolean }>(`/api/public/jobs/${draft.ref}/checkout`, {
+        method: 'POST',
+        json: { mode, sides, copies, method, pages: selected.map(({ p, r }) => ({ p, r })) },
+      });
+      if (order.cash) return router.push(`/j/${draft.ref}`);
       if (order.mock) {
         setMockOrder(order);
         setPaying(false);
@@ -222,8 +235,9 @@ export function CustomerFlow({ code }: { code: string }) {
     );
   }
 
-  const unavailable = !shop.open ? 'closed' : !shop.online ? 'offline' : shop.payments === 'none' ? 'nopay' : null;
+  const unavailable = !shop.open ? 'closed' : !shop.online ? 'offline' : shop.payments === 'none' && !shop.cash ? 'nopay' : null;
   const accept = cfg.accept.join(',') + ',image/*';
+  const sheets = q ? sheetsFor(q.pages, sides) * copies : 0;
 
   return (
     <Shell>
@@ -249,8 +263,8 @@ export function CustomerFlow({ code }: { code: string }) {
         <Card className="mt-5 flex animate-rise gap-3 border-warn/20 bg-warn-soft p-4">
           <WifiOff className="mt-0.5 size-5 shrink-0 text-warn" />
           <div className="text-sm">
-            <p className="font-bold text-warn">{unavailable === 'closed' ? 'Not taking orders right now' : unavailable === 'nopay' ? 'Online payment is not set up yet' : "The shop's printer is offline"}</p>
-            <p className="mt-0.5 text-ink-soft">{unavailable === 'nopay' ? 'This shop can’t take online payments yet. Please ask at the counter.' : 'You can still upload and check the price. Payment opens as soon as the printer is back. Please ask at the counter.'}</p>
+            <p className="font-bold text-warn">{unavailable === 'closed' ? 'Not taking orders right now' : unavailable === 'nopay' ? 'Payment is not set up yet' : "The shop's printer is offline"}</p>
+            <p className="mt-0.5 text-ink-soft">{unavailable === 'nopay' ? 'This shop can’t take payments here yet. Please ask at the counter.' : 'You can still upload and check the price. Payment opens as soon as the printer is back. Please ask at the counter.'}</p>
           </div>
         </Card>
       )}
@@ -261,7 +275,7 @@ export function CustomerFlow({ code }: { code: string }) {
           Your document
         </StepTitle>
 
-        {!file ? (
+        {!draft && !uploading ? (
           <>
             <button
               onClick={() => pickRef.current?.click()}
@@ -271,8 +285,8 @@ export function CustomerFlow({ code }: { code: string }) {
               <div className="relative grid size-16 place-items-center rounded-2xl bg-ink text-white shadow-lift transition group-hover:-translate-y-0.5">
                 <Upload className="size-7" />
               </div>
-              <p className="relative mt-4 text-lg font-bold">Tap to choose a file</p>
-              <p className="relative mt-1 text-sm text-ink-mute">PDF or photo · up to 25 MB</p>
+              <p className="relative mt-4 text-lg font-bold">Tap to choose files</p>
+              <p className="relative mt-1 text-sm text-ink-mute">A PDF or many photos · up to 25 MB each</p>
             </button>
             <button
               onClick={() => cameraRef.current?.click()}
@@ -283,14 +297,37 @@ export function CustomerFlow({ code }: { code: string }) {
           </>
         ) : (
           <>
-            <FileCard file={file} draft={draft} progress={progress} processing={processing} onRemove={reset} />
-            {draft && <DocumentPreview key={draft.ref} jobRef={draft.ref} pages={draft.file.pages} rotation={rotation} onRotate={setRotation} />}
+            {draft && (
+              <Card className="mt-3 flex items-center gap-3 p-3 pl-4">
+                <FileText className="size-5 shrink-0 text-ink-soft" />
+                <p className="min-w-0 flex-1 truncate text-sm font-semibold">{draft.file.name}</p>
+                <button onClick={() => pickRef.current?.click()} disabled={Boolean(uploading)} className="inline-flex h-10 shrink-0 items-center gap-1 rounded-xl px-2.5 text-sm font-semibold text-ink-soft transition hover:bg-paper-2 hover:text-ink disabled:opacity-40">
+                  <Plus className="size-4" /> Add
+                </button>
+                <button onClick={reset} disabled={Boolean(uploading)} className="grid size-10 shrink-0 place-items-center rounded-xl text-ink-mute transition hover:bg-bad-soft hover:text-bad disabled:opacity-40" aria-label="Remove all and start again">
+                  <Trash2 className="size-4.5" />
+                </button>
+              </Card>
+            )}
+            {uploading && (
+              <Card className="mt-3 p-4">
+                <p className="truncate text-sm font-semibold">
+                  {uploading.count > 1 ? `File ${uploading.index} of ${uploading.count}: ` : ''}
+                  {uploading.name}
+                </p>
+                <p className="mt-0.5 text-sm text-ink-mute">{uploading.progress >= 100 ? 'Getting pages ready…' : `Uploading ${uploading.progress}%`}</p>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-paper-2">
+                  <div className={cx('h-full rounded-full bg-ink transition-all duration-300', uploading.progress >= 100 && 'animate-pulse')} style={{ width: `${uploading.progress}%` }} />
+                </div>
+              </Card>
+            )}
+            {draft && <PagePicker jobRef={draft.ref} total={draft.file.totalPages} items={items} sides={sides} onChange={setItems} />}
           </>
         )}
 
         {uploadError && <p className="mt-3 rounded-xl bg-bad-soft px-4 py-3 text-sm font-medium text-bad">{uploadError}</p>}
-        <input ref={pickRef} type="file" accept={accept} className="hidden" onChange={(e) => choose(e.target.files?.[0])} />
-        <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => choose(e.target.files?.[0])} />
+        <input ref={pickRef} type="file" multiple accept={accept} className="hidden" onChange={(e) => addFiles(e.target.files)} />
+        <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => addFiles(e.target.files)} />
       </section>
 
       {/* Step 2: options */}
@@ -312,16 +349,21 @@ export function CustomerFlow({ code }: { code: string }) {
           />
         </div>
 
+        <div className="mt-3 grid grid-cols-2 gap-3" role="radiogroup" aria-label="Sides">
+          <OptionCard active={sides === 'single'} onClick={() => setSides('single')} title="Single side" hint="One page on each sheet" />
+          <OptionCard active={sides === 'double'} onClick={() => canDouble && setSides('double')} title="Both sides" hint={canDouble ? 'Front and back, saves paper' : 'Not available'} disabled={!canDouble} />
+        </div>
+
         <Card className="mt-3 flex items-center justify-between p-4 pl-5">
           <div>
             <p className="font-bold">Copies</p>
-            <p className="text-sm text-ink-mute">{draft ? `Each copy is ${plural(draft.file.pages, 'page')}` : 'How many sets'}</p>
+            <p className="text-sm text-ink-mute">{selected.length ? `Each copy is ${plural(selected.length, 'page')}` : 'How many sets'}</p>
           </div>
           <Stepper value={copies} onChange={setCopies} max={cfg.limits.maxCopies} />
         </Card>
 
         <p className="mt-3 flex items-center gap-1.5 px-1 text-xs text-ink-mute">
-          <FileText className="size-3.5" /> A4 paper, single-sided. Pages are scaled to fit.
+          <FileText className="size-3.5" /> A4 paper. Pages are scaled to fit.
         </p>
       </section>
 
@@ -331,6 +373,7 @@ export function CustomerFlow({ code }: { code: string }) {
           <div className="cmyk-bar h-1" />
           <div className="space-y-2.5 p-5 text-sm">
             <Row label={`${plural(q.pages, 'page')} × ${plural(q.copies, 'copy', 'copies')}`} value={plural(q.sheets, 'print')} />
+            <Row label={sides === 'double' ? 'Both sides' : 'Single side'} value={plural(sheets, 'sheet')} />
             <Row label={mode === 'color' ? 'Colour rate' : 'Black & white rate'} value={`${rupees(q.rate)} / page`} />
             <div className="flex items-baseline justify-between border-t border-dashed border-line-strong pt-3">
               <span className="font-bold">Total</span>
@@ -340,12 +383,22 @@ export function CustomerFlow({ code }: { code: string }) {
         </Card>
       )}
 
+      {q && shop.cash && online && (
+        <section className="mt-6">
+          <h2 className="text-[0.95rem] font-bold">How will you pay?</h2>
+          <div className="mt-3 grid grid-cols-2 gap-3" role="radiogroup" aria-label="Payment">
+            <OptionCard active={method === 'online'} onClick={() => setMethod('online')} title="Pay online" hint="UPI, card, netbanking" icon={<CreditCard className="size-5" />} />
+            <OptionCard active={method === 'cash'} onClick={() => setMethod('cash')} title="Cash" hint="Pay at the counter" icon={<Banknote className="size-5" />} />
+          </div>
+        </section>
+      )}
+
       <div className="mt-6 flex items-center justify-center gap-4 text-xs text-ink-mute">
         <span className="flex items-center gap-1">
-          <Lock className="size-3.5" /> Secure online payment
+          <Lock className="size-3.5" /> Paid before printing
         </span>
         <span className="flex items-center gap-1">
-          <ShieldCheck className="size-3.5" /> File deleted after printing
+          <ShieldCheck className="size-3.5" /> Files deleted automatically
         </span>
       </div>
 
@@ -357,8 +410,14 @@ export function CustomerFlow({ code }: { code: string }) {
           <Button size="xl" className="w-full" disabled={!canPay || !q} loading={paying} onClick={pay}>
             {!draft ? (
               'Choose a file to continue'
+            ) : !selected.length ? (
+              'Choose at least one page'
+            ) : method === 'cash' && !unavailable ? (
+              <>
+                Place order, pay {q ? rupees(q.total) : ''} cash <ArrowRight className="size-5" />
+              </>
             ) : unavailable ? (
-              unavailable === 'nopay' ? 'Online payment not available' : 'Printer offline, payment paused'
+              unavailable === 'nopay' ? 'Payment not available' : 'Printer offline, payment paused'
             ) : (
               <>
                 Pay {q ? rupees(q.total) : ''} &amp; print <ArrowRight className="size-5" />
@@ -400,47 +459,23 @@ function StepTitle({ n, done, children }: { n: number; done: boolean; children: 
   );
 }
 
-function FileCard({ file, draft, progress, processing, onRemove }: { file: File; draft: Draft | null; progress: number; processing: boolean; onRemove: () => void }) {
-  const isImage = file.type.startsWith('image/');
-  const [thumb, setThumb] = useState<string>();
-  useEffect(() => {
-    if (!isImage) return;
-    const u = URL.createObjectURL(file);
-    setThumb(u);
-    return () => URL.revokeObjectURL(u);
-  }, [file, isImage]);
-
+function OptionCard({ active, onClick, title, hint, icon, disabled }: { active: boolean; onClick: () => void; title: string; hint: string; icon?: React.ReactNode; disabled?: boolean }) {
   return (
-    <Card className="mt-3 flex animate-rise items-center gap-4 p-4">
-      <div className="relative grid h-[4.5rem] w-14 shrink-0 place-items-center overflow-hidden rounded-lg border border-line bg-paper shadow-card">
-        {thumb ? <img src={thumb} alt="" className="size-full object-cover" /> : <FileText className="size-6 text-ink-soft" />}
-        {!draft && (
-          <div className="absolute inset-0 overflow-hidden bg-white/40">
-            <div className="h-full animate-feed bg-gradient-to-b from-transparent via-cyan/20 to-transparent" />
-          </div>
-        )}
+    <button
+      type="button"
+      role="radio"
+      aria-checked={active}
+      disabled={disabled}
+      onClick={onClick}
+      className={cx('rounded-2xl border-2 bg-surface p-4 text-left transition active:scale-[0.98] disabled:opacity-40', active ? 'border-ink shadow-lift' : 'border-line hover:border-line-strong')}
+    >
+      <div className="flex items-center justify-between">
+        <span className="text-ink-soft">{icon ?? <span className="block size-5" />}</span>
+        <span className={cx('grid size-5 place-items-center rounded-full border-2 transition', active ? 'border-ink bg-ink' : 'border-line-strong')}>{active && <span className="size-1.5 rounded-full bg-white" />}</span>
       </div>
-      <div className="min-w-0 flex-1">
-        <p className="truncate font-semibold">{file.name}</p>
-        {draft ? (
-          <p className="mt-0.5 flex items-center gap-1.5 text-sm text-ok">
-            <Check className="size-4" strokeWidth={2.5} /> {plural(draft.file.pages, 'page')} · {bytes(file.size)}
-          </p>
-        ) : (
-          <>
-            <p className="mt-0.5 text-sm text-ink-mute">{processing ? 'Counting pages…' : `Uploading ${progress}%`}</p>
-            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-paper-2">
-              <div className={cx('h-full rounded-full bg-ink transition-all duration-300', processing && 'animate-pulse')} style={{ width: `${processing ? 100 : progress}%` }} />
-            </div>
-          </>
-        )}
-      </div>
-      {draft && (
-        <button onClick={onRemove} className="grid size-10 shrink-0 place-items-center rounded-xl text-ink-mute transition hover:bg-bad-soft hover:text-bad" aria-label="Remove file">
-          <Trash2 className="size-4.5" />
-        </button>
-      )}
-    </Card>
+      <p className="mt-2.5 font-bold leading-tight">{title}</p>
+      <p className="mt-0.5 text-sm text-ink-mute">{hint}</p>
+    </button>
   );
 }
 

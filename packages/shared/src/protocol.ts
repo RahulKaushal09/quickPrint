@@ -8,6 +8,8 @@ export interface AgentPrinter {
   name: string;
   status: 'ready' | 'offline' | 'paper_out' | 'jammed' | 'error' | 'busy';
   isDefault: boolean;
+  /** Windows reports this printer can print both sides. */
+  duplex?: boolean;
 }
 
 /** Agent → server */
@@ -25,6 +27,7 @@ export interface JobOrder {
   printer: string;
   copies: number;
   color: boolean;
+  duplex: boolean;
   pages: number;
   fileName: string;
   /** Path on the API, fetched with the agent's own bearer token. */

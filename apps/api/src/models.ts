@@ -10,11 +10,28 @@ const ratesSchema = new Schema(
     bwPerPage: { type: Number, required: true, default: 200 },
     colorPerPage: { type: Number, required: true, default: 1000 },
     colorEnabled: { type: Boolean, required: true, default: true },
+    duplexEnabled: { type: Boolean, required: true, default: true },
   },
   sub,
 );
 /** Printers allowed for each print type, so a shop can spread work and survive one going down. Empty = the PC's default printer. */
-const printersSchema = new Schema({ bw: { type: [String], default: [] }, color: { type: [String], default: [] } }, sub);
+const printersSchema = new Schema(
+  {
+    bw: { type: [String], default: [] },
+    color: { type: [String], default: [] },
+    /** Printers allowed to print both sides. Empty = whichever ones Windows reports can do it. */
+    duplex: { type: [String], default: [] },
+  },
+  sub,
+);
+const cashSchema = new Schema(
+  {
+    enabled: { type: Boolean, required: true, default: true },
+    /** Print cash jobs at once instead of waiting for the shop to accept the money. */
+    autoPrint: { type: Boolean, required: true, default: false },
+  },
+  sub,
+);
 /** The shop's own Razorpay account. Secrets are encrypted (see secrets.ts) and never loaded unless asked for. */
 const razorpaySchema = new Schema(
   {
@@ -39,6 +56,7 @@ const shopSchema = new Schema(
     rates: { type: ratesSchema, default: () => ({}) },
     printers: { type: printersSchema, default: () => ({}) },
     razorpay: { type: razorpaySchema, default: () => ({}) },
+    cash: { type: cashSchema, default: () => ({}) },
   },
   { timestamps: true },
 );
@@ -73,6 +91,7 @@ const deviceSchema = new Schema(
         name: String,
         status: String,
         isDefault: Boolean,
+        duplex: Boolean,
       },
     ],
     online: { type: Boolean, default: false },
@@ -112,11 +131,14 @@ const jobSchema = new Schema(
     file: { type: fileSchema, required: true },
     mode: { type: String, enum: ['bw', 'color'], required: true },
     copies: { type: Number, required: true },
-    /** Clockwise turn of the document on the upright A4 sheet. Applied when the file is served for printing. */
-    rotation: { type: Number, enum: [0, 90, 180, 270], default: 0 },
+    sides: { type: String, enum: ['single', 'double'], default: 'single' },
+    /** Chosen pages in print order, each with its turn on the upright A4 sheet. Empty = every page as uploaded. */
+    pageList: [{ _id: false, p: Number, r: Number }],
+    printPages: Number,
     rate: { type: Number, required: true },
     total: { type: Number, required: true },
     payment: {
+      method: { type: String, enum: ['online', 'cash'], default: 'online' },
       orderId: { type: String, index: true },
       paymentId: String,
       refundId: String,

@@ -39,6 +39,10 @@ async function cleanup() {
   for (const j of await Job.find({ status: 'draft', createdAt: { $lt: draftCutoff } }).select('_id').limit(500)) {
     await transition(j._id, 'expired', { only: ['draft'], note: 'Not paid in time' });
   }
+  // A cash order nobody paid for by the next day will not be collected.
+  for (const j of await Job.find({ status: 'awaiting_cash', updatedAt: { $lt: new Date(Date.now() - 24 * 3600_000) } }).select('_id').limit(500)) {
+    await transition(j._id, 'expired', { only: ['awaiting_cash'], note: 'Cash not received in time' });
+  }
   const fileCutoff = new Date(Date.now() - config.fileRetentionHours * 3600_000);
   const done = await Job.find({
     'file.key': { $ne: '' },

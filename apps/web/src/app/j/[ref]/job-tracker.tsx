@@ -1,9 +1,9 @@
 'use client';
 
-import { AlertTriangle, Check, CreditCard, FileText, Printer, RotateCcw, Send, Store } from 'lucide-react';
+import { AlertTriangle, Banknote, Check, CreditCard, FileText, Printer, RotateCcw, Send, Store } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import type { JobStatus } from '@seedhaprint/shared';
+import { sheetsFor, type JobStatus, type Sides } from '@seedhaprint/shared';
 import { Button, Card, Mark, Skeleton } from '@/components/ui';
 import { api } from '@/lib/api';
 import { cx, plural, rupees } from '@/lib/format';
@@ -14,6 +14,8 @@ interface Job {
   pickupCode: string;
   file: { name: string; pages: number };
   mode: 'bw' | 'color';
+  sides: Sides;
+  cash: boolean;
   copies: number;
   rate: number;
   total: number;
@@ -24,7 +26,7 @@ interface Job {
 }
 
 const STEPS = [
-  { key: 'paid', label: 'Payment received', icon: CreditCard },
+  { key: 'paid', label: 'Order received', icon: CreditCard },
   { key: 'sent', label: 'Sent to the printer', icon: Send },
   { key: 'printing', label: 'Printing', icon: Printer },
   { key: 'printed', label: 'Ready to collect', icon: Store },
@@ -86,6 +88,7 @@ export function JobTracker({ jobRef }: { jobRef: string }) {
   const failed = job.status === 'failed';
   const refunded = job.status === 'refunded';
   const unpaid = job.status === 'draft' || job.status === 'expired';
+  const waitingCash = job.status === 'awaiting_cash';
 
   return (
     <Shell shop={job.shop}>
@@ -101,20 +104,24 @@ export function JobTracker({ jobRef }: { jobRef: string }) {
               !done && !failed && !refunded && 'bg-ink text-white',
             )}
           >
-            {done ? <Check className="size-8" strokeWidth={3} /> : failed || refunded ? <AlertTriangle className="size-7" /> : <PrinterAnim />}
+            {done ? <Check className="size-8" strokeWidth={3} /> : failed || refunded ? <AlertTriangle className="size-7" /> : waitingCash ? <Banknote className="size-8" /> : <PrinterAnim />}
           </div>
           <h1 className="mt-4 text-2xl font-extrabold tracking-tight">
-            {done ? 'Your prints are ready' : failed ? 'Printing hit a problem' : refunded ? 'Payment refunded' : unpaid ? 'Payment not received' : idx === 0 ? 'Waiting for the printer' : 'Printing your document'}
+            {waitingCash ? `Pay ${rupees(job.total)} at the counter` : done ? 'Your prints are ready' : failed ? 'Printing hit a problem' : refunded ? 'Payment refunded' : unpaid ? (job.cash ? 'This order was cancelled' : 'Payment not received') : idx === 0 ? 'Waiting for the printer' : 'Printing your document'}
           </h1>
           <p className="mx-auto mt-1.5 max-w-xs text-sm text-ink-mute">
-            {done
+            {waitingCash
+              ? 'Show this code and pay the shop. Printing starts when they accept it.'
+              : done && job.cash
+                ? 'Show this code at the counter to collect them. Pay there if you have not yet.'
+                : done
               ? 'Show this code at the counter to collect them.'
               : failed
                 ? 'Please show this code at the counter. The shop will reprint it or refund you.'
                 : refunded
                   ? `${rupees(job.total)} is on its way back to you. It usually reaches your account in 5 to 7 working days.`
                   : unpaid
-                    ? 'This order was not paid, so nothing will be printed.'
+                    ? job.cash ? 'Nothing will be printed. Please ask at the counter.' : 'This order was not paid, so nothing will be printed.'
                     : 'Keep this page open. It updates by itself.'}
           </p>
 
@@ -128,7 +135,7 @@ export function JobTracker({ jobRef }: { jobRef: string }) {
       </Card>
 
       {/* Progress */}
-      {!unpaid && !refunded && (
+      {!unpaid && !refunded && !waitingCash && (
         <Card className="mt-4 animate-rise p-5 [animation-delay:80ms]">
           <ol className="relative">
             {STEPS.map((s, i) => {
@@ -168,14 +175,14 @@ export function JobTracker({ jobRef }: { jobRef: string }) {
           <div className="min-w-0 flex-1">
             <p className="truncate font-semibold">{job.file.name}</p>
             <p className="text-ink-mute">
-              {plural(job.file.pages, 'page')} × {plural(job.copies, 'copy', 'copies')} · {job.mode === 'color' ? 'Colour' : 'Black & white'}
+              {plural(job.file.pages, 'page')} × {plural(job.copies, 'copy', 'copies')} · {job.mode === 'color' ? 'Colour' : 'Black & white'} · {job.sides === 'double' ? `Both sides, ${plural(sheetsFor(job.file.pages, 'double') * job.copies, 'sheet')}` : 'Single side'}
             </p>
           </div>
           <p className="font-mono text-lg font-bold tabular">{rupees(job.total)}</p>
         </div>
         {job.paidAt && (
           <p className="mt-3 border-t border-line pt-3 text-xs text-ink-mute">
-            Paid {new Date(job.paidAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })} · Ref {job.ref.slice(0, 8).toUpperCase()}
+            {job.cash ? 'Cash' : 'Paid'} {new Date(job.paidAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })} · Ref {job.ref.slice(0, 8).toUpperCase()}
           </p>
         )}
       </Card>

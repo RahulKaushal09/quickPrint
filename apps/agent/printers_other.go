@@ -17,7 +17,7 @@ import (
 func listPrinters() ([]Printer, error) {
 	return []Printer{
 		{Name: "Canon LBP2900", Status: "ready", IsDefault: true},
-		{Name: "Epson L3150 Series", Status: "ready"},
+		{Name: "Epson L3150 Series", Status: "ready", Duplex: true},
 	}, nil
 }
 
@@ -31,7 +31,11 @@ func printFile(o *JobOrder, file string) error {
 	if o.Color {
 		mode = "color"
 	}
-	dest := filepath.Join(dir, fmt.Sprintf("%s_%s_%dx_%s.pdf", o.PickupCode, mode, o.Copies, o.JobID))
+	sides := "single"
+	if o.Duplex {
+		sides = "double"
+	}
+	dest := filepath.Join(dir, fmt.Sprintf("%s_%s_%s_%dx_%s.pdf", o.PickupCode, mode, sides, o.Copies, o.JobID))
 	src, err := os.Open(file)
 	if err != nil {
 		return err

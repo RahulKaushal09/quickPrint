@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowRight, Check, ChevronDown, CreditCard, FileText, Layers, MessageCircle, Monitor, PauseCircle, Printer, QrCode, RotateCcw, Smartphone, Wallet, X } from 'lucide-react';
+import { ArrowDown, ArrowRight, Banknote, Check, ChevronDown, CreditCard, FileText, Layers, MessageCircle, Monitor, Printer, QrCode, RotateCcw, Smartphone, Wallet, X } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import QRCode from 'qrcode';
@@ -20,20 +20,21 @@ const COMPARE = [
   ['Customers send files to your personal WhatsApp', 'They upload themselves. Your WhatsApp stays yours.'],
   ['Pen drives bring viruses to your shop PC', 'No pen drive ever touches your computer.'],
   ['You count pages and work out the bill', 'Pages and price are worked out before they pay.'],
-  ['You hunt for change and chase small payments', 'Every job is paid online before it prints.'],
+  ['You hunt for change and chase small payments', 'Online orders are paid before they print. Cash is your choice.'],
   ['One busy person means a queue at the counter', 'Jobs print on their own while you serve others.'],
   ['Customer documents pile up on your PC', 'Files are deleted automatically after printing.'],
 ];
 
 const FAQS = [
   ['Do I need to buy a new printer?', 'No. SeedhaPrint uses the printers already installed on your shop PC. You can send black & white jobs to one printer and colour jobs to another.'],
-  ['My shop PC is old. Will it work?', 'It is built for Windows 7, 8, 10 and 11. You install one small program, type a pairing code, and it runs quietly in the background.'],
+  ['My shop PC is old. Will it work?', 'It is built for Windows 7, 8, 10 and 11. You install one app, sign in, and it opens by itself every time the computer starts.'],
   ['Does my customer need to install an app?', 'No. They scan the QR with their phone camera and a web page opens. There is no app and no login.'],
-  ['What can customers print?', 'PDFs and photos, on A4 paper, single-sided, in black & white or colour. You set your own price per page for each.'],
+  ['What can customers print?', 'PDFs and many photos in one order, on A4 paper, one side or both, in black & white or colour. They tick the pages they want, and you set your own price per page.'],
   ['What if the paper jams or a print comes out bad?', 'Every job has a pickup code and shows on your dashboard. Report the problem, then print it again or refund the customer.'],
   ['What happens if my internet or PC goes off?', 'New customers see that the printer is offline and payment pauses, so nobody pays for a print that cannot come out. Jobs already paid wait safely and print when your PC is back.'],
   ['Are customer documents safe?', 'Each file goes only to your shop, and files are deleted automatically after printing. Uploads that are never paid for are removed too.'],
-  ['Where does the money go?', 'Straight to you. You connect your own Razorpay account, customers pay into it, and Razorpay settles to your bank. SeedhaPrint never holds your money.'],
+  ['Can customers pay cash?', 'Yes. They choose cash and show you a pickup code. One switch decides whether cash orders print straight away or wait until you tap Cash received.'],
+  ['Where does the money go?', 'Straight to you. Online payments go into your own Razorpay account and settle to your bank, and cash goes in your hand. SeedhaPrint never holds your money.'],
   ['How much does it cost?', 'Send us a message on WhatsApp with your city and what you print. We will explain the plan for your shop.'],
 ];
 
@@ -143,7 +144,7 @@ export default async function Home() {
                 </a>
               </div>
               <ul className="mt-9 grid gap-x-6 gap-y-2.5 text-sm font-medium text-ink-soft sm:flex sm:flex-wrap">
-                {['Your existing printer', 'Windows 7 to 11', 'No app for customers'].map((t) => (
+                {['Your existing printer', 'Windows 7 to 11', 'Online or cash'].map((t) => (
                   <li key={t} className="flex items-center gap-2">
                     <Check className="size-4 text-ok" strokeWidth={3} /> {t}
                   </li>
@@ -219,8 +220,8 @@ export default async function Home() {
             <ol className="mt-14 grid gap-px overflow-hidden rounded-3xl border border-line bg-line md:grid-cols-4">
               {[
                 { icon: QrCode, who: 'Customer', t: 'Scans your QR', d: 'Any phone camera opens your shop page. No app, no login.' },
-                { icon: Smartphone, who: 'Customer', t: 'Uploads and chooses', d: 'A PDF or photo, colour or black & white, and how many copies.' },
-                { icon: CreditCard, who: 'Customer', t: 'Pays online', d: 'The price shows up first, then they pay. No change, no credit.' },
+                { icon: Smartphone, who: 'Customer', t: 'Uploads and chooses', d: 'A PDF or many photos, then the pages they want, colour, sides and copies.' },
+                { icon: CreditCard, who: 'Customer', t: 'Pays', d: 'The price shows up first, then they pay online or choose cash at the counter.' },
                 { icon: Printer, who: 'You', t: 'Hand it over', d: 'It has already printed. Match the 4-digit pickup code and you are done.', you: true },
               ].map(({ icon: Icon, who, t, d, you }, i) => (
                 <li key={t} className={`relative flex flex-col p-7 ${you ? 'bg-ink text-white' : 'bg-surface'}`}>
@@ -274,13 +275,13 @@ export default async function Home() {
             <div>
               <Eyebrow light>Your dashboard</Eyebrow>
               <h2 className="mt-4 text-4xl font-extrabold leading-[1.05] tracking-[-0.03em] sm:text-5xl">Know what your counter did today.</h2>
-              <p className="mt-5 max-w-md text-lg leading-relaxed text-white/60">Every job and every rupee, on your phone or your PC, updating live.</p>
+              <p className="mt-5 max-w-md text-lg leading-relaxed text-white/60">Every job and every rupee, in the app on your shop PC or on your phone, updating live.</p>
               <ul className="mt-9 grid gap-5 sm:grid-cols-2">
                 {[
                   { icon: Wallet, t: 'Your prices, your earnings', d: 'Set your own rate per page. See today’s money at a glance.' },
                   { icon: Layers, t: 'B/W and colour routing', d: 'Assign one or more printers to each type. Jobs find the free one.' },
                   { icon: RotateCcw, t: 'Reprint or refund', d: 'Paper jam? Print it again, or give the money back.' },
-                  { icon: PauseCircle, t: 'Pause any time', d: 'One switch stops new orders when you are closing up.' },
+                  { icon: Banknote, t: 'Cash your way', d: 'Print cash orders straight away, or only after you collect the money.' },
                 ].map(({ icon: Icon, t, d }) => (
                   <li key={t}>
                     <Icon className="size-5 text-white/70" />
@@ -359,7 +360,7 @@ export default async function Home() {
             {[
               ['Message us', 'Tell us your shop name and city on WhatsApp.'],
               ['We add your shop', 'You get your login and QR code, and connect your Razorpay.'],
-              ['Install on your PC', 'Run the small installer and type your pairing code.'],
+              ['Install on your PC', 'Install the app, sign in and click Connect this PC.'],
               ['Put up your poster', 'Print it from your dashboard and stick it at the counter.'],
             ].map(([t, d], i) => (
               <li key={t} className="rounded-3xl bg-paper-2 p-6">

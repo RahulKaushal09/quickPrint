@@ -1,0 +1,16 @@
+{
+  "name": "seedhaprint-desktop",
+  "productName": "SeedhaPrint",
+  "version": "1.0.0",
+  "description": "SeedhaPrint for print shops",
+  "private": true,
+  "main": "src/main.js",
+  "author": "SeedhaPrint",
+  "scripts": {
+    "start": "electron . --dev"
+  },
+  "devDependencies": {
+    "electron": "22.3.27",
+    "resedit": "^2.0.3"
+  }
+}

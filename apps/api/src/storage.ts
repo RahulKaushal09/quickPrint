@@ -6,6 +6,7 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import type { Response } from 'express';
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import type { PageChoice } from '@seedhaprint/shared';
 import { config } from './config';
 import { layoutForPrint } from './documents';
 
@@ -56,11 +57,15 @@ function s3Storage(c: NonNullable<typeof config.s3>): Storage {
   };
 }
 
-/** The file as the printer should get it: upright A4 with the customer's rotation applied. */
-export async function sendPrintFile(res: Response, file: { key?: string | null }, rotation: number | null | undefined) {
+export async function readAll(key: string): Promise<Buffer> {
   const chunks: Buffer[] = [];
-  for await (const c of await storage.stream(file.key!)) chunks.push(c as Buffer);
-  const pdf = await layoutForPrint(Buffer.concat(chunks), rotation ?? 0);
+  for await (const c of await storage.stream(key)) chunks.push(c as Buffer);
+  return Buffer.concat(chunks);
+}
+
+/** The file as the printer should get it: the chosen pages on upright A4. */
+export async function sendPrintFile(res: Response, job: { file: { key?: string | null }; pageList?: unknown }) {
+  const pdf = await layoutForPrint(await readAll(job.file.key!), (job.pageList ?? []) as PageChoice[]);
   res.setHeader('Content-Type', 'application/pdf');
   res.end(pdf);
 }

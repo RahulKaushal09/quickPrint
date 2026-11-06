@@ -21,6 +21,7 @@ var (
 	winspool              = syscall.NewLazyDLL("winspool.drv")
 	procEnumPrinters      = winspool.NewProc("EnumPrintersW")
 	procGetDefaultPrinter = winspool.NewProc("GetDefaultPrinterW")
+	procDeviceCaps        = winspool.NewProc("DeviceCapabilitiesW")
 	ntdll                 = syscall.NewLazyDLL("ntdll.dll")
 	procRtlGetVersion     = ntdll.NewProc("RtlGetVersion")
 )
@@ -72,6 +73,22 @@ func defaultPrinter() string {
 	return syscall.UTF16ToString(buf)
 }
 
+// Asking a driver can be slow, and the answer doesn't change, so each printer is asked once.
+var duplexCache = map[string]bool{}
+
+func canDuplex(name, port string) bool {
+	if v, ok := duplexCache[name]; ok {
+		return v
+	}
+	const dcDuplex = 7
+	n, _ := syscall.UTF16PtrFromString(name)
+	p, _ := syscall.UTF16PtrFromString(port)
+	r, _, _ := procDeviceCaps.Call(uintptr(unsafe.Pointer(n)), uintptr(unsafe.Pointer(p)), dcDuplex, 0, 0)
+	v := int32(r) == 1
+	duplexCache[name] = v
+	return v
+}
+
 func listPrinters() ([]Printer, error) {
 	flags := uintptr(printerEnumLocal | printerEnumConnections)
 	var needed, returned uint32
@@ -93,7 +110,8 @@ func listPrinters() ([]Printer, error) {
 		if skipVirtual(name, utf16ptr(p.PortName)) {
 			continue
 		}
-		out = append(out, Printer{Name: name, Status: printerStatus(p.Status, p.Attributes), IsDefault: name == def})
+		port := utf16ptr(p.PortName)
+		out = append(out, Printer{Name: name, Status: printerStatus(p.Status, p.Attributes), IsDefault: name == def, Duplex: canDuplex(name, port)})
 	}
 	return out, nil
 }

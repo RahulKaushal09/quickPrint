@@ -12,5 +12,6 @@ storage
 *.tsbuildinfo
 next-env.d.ts
 apps/agent/dev-data
-apps/agent/build/out
+apps/desktop/build/out
+apps/web/public/downloads/*.exe
 apps/agent/*.syso

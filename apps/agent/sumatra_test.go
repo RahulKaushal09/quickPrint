@@ -7,12 +7,12 @@ import (
 
 func TestSumatraArgs(t *testing.T) {
 	got := sumatraArgs(&JobOrder{Printer: "HP LaserJet", Copies: 3, Color: false}, `C:\work\a.pdf`)
-	want := []string{"-print-to", "HP LaserJet", "-silent", "-exit-when-done", "-print-settings", "3x,monochrome,fit,paper=A4", `C:\work\a.pdf`}
+	want := []string{"-print-to", "HP LaserJet", "-silent", "-exit-when-done", "-print-settings", "3x,monochrome,simplex,fit,paper=A4", `C:\work\a.pdf`}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v", got)
 	}
-	got = sumatraArgs(&JobOrder{Printer: "Epson", Copies: 0, Color: true}, "b.pdf")
-	if got[5] != "1x,color,fit,paper=A4" {
+	got = sumatraArgs(&JobOrder{Printer: "Epson", Copies: 0, Color: true, Duplex: true}, "b.pdf")
+	if got[5] != "1x,color,duplexlong,fit,paper=A4" {
 		t.Fatalf("got %v", got[5])
 	}
 }

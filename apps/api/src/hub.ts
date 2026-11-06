@@ -148,16 +148,29 @@ export function printerList(v: unknown): string[] {
   return ([] as unknown[]).concat(v ?? []).filter((x): x is string => typeof x === 'string' && x !== '');
 }
 
+interface ShopPrinters {
+  bw?: unknown;
+  color?: unknown;
+  duplex?: unknown;
+}
+
+/** Whether this printer is allowed to take a job of this kind. */
+export function printerFits(p: AgentPrinter, mode: string, sides: string | null | undefined, assigned: ShopPrinters | null | undefined): boolean {
+  const wanted = printerList(mode === 'color' ? assigned?.color : assigned?.bw);
+  if (p.status === 'offline' || (wanted.length > 0 && !wanted.includes(p.name))) return false;
+  if (sides !== 'double') return true;
+  const duplex = printerList(assigned?.duplex);
+  return duplex.length ? duplex.includes(p.name) : Boolean(p.duplex);
+}
+
 /**
  * Pick a connected PC and printer for this job, or null if none can take it now.
  * Assigned printers: the ready one with the least work wins, so jobs spread out
  * and a jammed printer is skipped. Nothing assigned: the PC's default printer.
  */
-function route(job: JobDoc, shopPrinters: { bw: unknown; color: unknown }, devices: Conn[], load: Map<string, number>): { c: Conn; printer: string } | null {
-  const wanted = printerList(job.mode === 'color' ? shopPrinters.color : shopPrinters.bw);
-  const options = devices
-    .flatMap((c) => c.printers.map((p) => ({ c, p })))
-    .filter(({ p }) => p.status !== 'offline' && (wanted.length === 0 || wanted.includes(p.name)));
+function route(job: JobDoc, assigned: ShopPrinters, devices: Conn[], load: Map<string, number>): { c: Conn; printer: string } | null {
+  const wanted = printerList(job.mode === 'color' ? assigned.color : assigned.bw);
+  const options = devices.flatMap((c) => c.printers.map((p) => ({ c, p }))).filter(({ p }) => printerFits(p, job.mode, job.sides, assigned));
   if (!options.length) return null;
   const rank = ({ p }: (typeof options)[number]) =>
     [p.status === 'ready' ? 0 : 1, wanted.length ? (load.get(p.name) ?? 0) : p.isDefault ? 0 : 1, wanted.length ? wanted.indexOf(p.name) : (load.get(p.name) ?? 0)] as const;
@@ -174,7 +187,8 @@ export function orderFor(job: JobDoc, printer: string): JobOrder {
     printer,
     copies: job.copies,
     color: job.mode === 'color',
-    pages: job.file.pages,
+    duplex: job.sides === 'double',
+    pages: job.printPages ?? job.file.pages,
     fileName: job.file.name,
     fileUrl: `/api/agent/jobs/${job._id}/file`,
     pickupCode: job.pickupCode,
@@ -197,7 +211,7 @@ export async function dispatchShop(shopId: string | Types.ObjectId) {
   ]);
   const load = new Map<string, number>(busy.map((b) => [String(b._id), b.jobs as number]));
   for (const job of queued) {
-    const r = route(job, shop.printers as { bw: unknown; color: unknown }, devices, load);
+    const r = route(job, shop.printers as ShopPrinters, devices, load);
     if (!r) continue;
     const claimed = await transition(job._id, 'sent', {
       only: ['queued'],
@@ -235,6 +249,7 @@ export function sendTestPage(deviceId: string, printer: string, shopCode: string
       printer,
       copies: 1,
       color: true,
+      duplex: false,
       pages: 1,
       fileName: 'Test page.pdf',
       fileUrl: `/api/agent/test-page?printer=${encodeURIComponent(printer)}`,

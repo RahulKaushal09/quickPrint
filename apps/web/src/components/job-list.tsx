@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, Eye, MoreHorizontal, RotateCcw, Undo2 } from 'lucide-react';
+import { AlertTriangle, Banknote, Eye, MoreHorizontal, RotateCcw, Undo2, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { JobStatus } from '@seedhaprint/shared';
 import { Badge, Button, Field, Input, Modal, StatusPill, useToast } from '@/components/ui';
@@ -14,6 +14,8 @@ export interface ShopJob {
   pickupCode: string;
   file: { name: string; pages: number; bytes?: number; available: boolean };
   mode: 'bw' | 'color';
+  sides: 'single' | 'double';
+  cash: boolean;
   copies: number;
   rate: number;
   total: number;
@@ -87,6 +89,8 @@ function JobRow({ job, onChange, compact }: { job: ShopJob; onChange: (j: ShopJo
             <span className={cx('size-2 rounded-full', job.mode === 'color' ? 'bg-[conic-gradient(#00a3e0,#e5007d,#ffd200,#00a3e0)]' : 'bg-ink')} />
             {job.mode === 'color' ? 'Colour' : 'B/W'}
           </span>
+          {job.sides === 'double' && <span className="font-semibold text-ink-soft">· Both sides</span>}
+          {job.cash && <span className="font-semibold text-ok">· Cash</span>}
           {!compact && job.printer && <span className="hidden truncate sm:inline">· {job.printer}</span>}
           <span>· {timeAgo(job.paidAt || job.createdAt)}</span>
         </p>
@@ -94,6 +98,16 @@ function JobRow({ job, onChange, compact }: { job: ShopJob; onChange: (j: ShopJo
           <p className="mt-1 flex items-center gap-1 text-xs font-medium text-bad">
             <AlertTriangle className="size-3.5" /> {job.error}
           </p>
+        )}
+        {job.status === 'awaiting_cash' && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button size="sm" loading={busy} icon={<Banknote className="size-4" />} onClick={() => act('cash-received', undefined, 'Sent to the printer')}>
+              Cash received, print
+            </Button>
+            <Button size="sm" variant="ghost" disabled={busy} icon={<X className="size-4" />} onClick={() => confirm('Cancel this cash order?') && act('cash-cancel', undefined, 'Order cancelled')}>
+              Cancel
+            </Button>
+          </div>
         )}
       </div>
       <div className="hidden text-right sm:block">

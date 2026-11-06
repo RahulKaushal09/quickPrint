@@ -21,9 +21,11 @@ export default function SettingsPage() {
     bw: toRupees(shop.rates.bwPerPage),
     color: toRupees(shop.rates.colorPerPage),
     colorEnabled: shop.rates.colorEnabled,
+    duplexEnabled: shop.rates.duplexEnabled,
+    cashEnabled: shop.cash.enabled,
   });
   const [busy, setBusy] = useState(false);
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [k]: e.target.value });
+  const set = (k: 'name' | 'area' | 'city' | 'phone' | 'bw' | 'color') => (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [k]: e.target.value });
 
   const bw = toPaise(form.bw);
   const color = toPaise(form.color);
@@ -35,7 +37,7 @@ export default function SettingsPage() {
     try {
       const r = await api('/api/shop', {
         method: 'PATCH',
-        json: { name: form.name, area: form.area, city: form.city, phone: form.phone, rates: { bwPerPage: bw, colorPerPage: color, colorEnabled: form.colorEnabled } },
+        json: { name: form.name, area: form.area, city: form.city, phone: form.phone, rates: { bwPerPage: bw, colorPerPage: color, colorEnabled: form.colorEnabled, duplexEnabled: form.duplexEnabled }, cash: { ...shop.cash, enabled: form.cashEnabled } },
       });
       setShop(r.shop);
       toast('Settings saved');
@@ -97,6 +99,20 @@ export default function SettingsPage() {
                 <Input prefix="₹" inputMode="decimal" value={form.color} onChange={set('color')} />
               </Field>
             )}
+          </div>
+          <div className="mt-4 flex items-center justify-between rounded-xl border border-line px-4 py-3">
+            <div>
+              <p className="text-sm font-semibold">Printing on both sides</p>
+              <p className="text-xs text-ink-mute">Customers pay per printed page, same as single side.</p>
+            </div>
+            <Switch checked={form.duplexEnabled} onChange={(v) => setForm({ ...form, duplexEnabled: v })} label="Printing on both sides" />
+          </div>
+          <div className="mt-4 flex items-center justify-between rounded-xl border border-line px-4 py-3">
+            <div>
+              <p className="text-sm font-semibold">Accept cash</p>
+              <p className="text-xs text-ink-mute">Customers can choose to pay at the counter.</p>
+            </div>
+            <Switch checked={form.cashEnabled} onChange={(v) => setForm({ ...form, cashEnabled: v })} label="Accept cash" />
           </div>
           <div className="mt-5 rounded-xl bg-paper p-4 text-sm">
             <p className="font-semibold">Example</p>

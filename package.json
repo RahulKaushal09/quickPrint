@@ -11,7 +11,8 @@
     "test": "npm test -w @seedhaprint/shared && npm test -w @seedhaprint/api",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "agent:dev": "cd apps/agent && ../../.toolchain/go/bin/go run . run --dev",
-    "agent:build": "node apps/agent/build/build.mjs"
+    "app:build": "node apps/desktop/build/build.mjs",
+    "app:dev": "cd apps/desktop && electron . --dev"
   },
   "engines": { "node": ">=22.9" }
 }

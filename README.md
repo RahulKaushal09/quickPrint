@@ -15,12 +15,13 @@ SeedhaPrint/
 ├── packages/shared   Job states, pricing, agent protocol (used by API and web)
 ├── apps/api          Express 5 + Mongoose: public, shop, admin, agent routes + WebSocket hub
 ├── apps/web          Next.js 16 + Tailwind 4: customer QR flow, shop dashboard, admin, home page
-└── apps/agent        Go 1.20 Windows agent + NSIS installer (Windows 7, 8, 10, 11)
+├── apps/agent        Go 1.20 print agent
+└── apps/desktop      The Windows app (Electron 22 + agent) and its installer (Windows 7, 8, 10, 11)
 ```
 
 | Who | Where | What they do |
 |---|---|---|
-| Customer | `/s/<CODE>` (the QR) | Upload, choose B/W or colour and copies, pay |
+| Customer | `/s/<CODE>` (the QR) | Upload a PDF or many photos, tick and turn pages, choose B/W or colour, one or both sides, copies, pay online or cash |
 | Customer | `/j/<ref>` | Live status + pickup code |
 | Shop owner | `/dashboard` | Today's earnings, jobs, printers per print type, own Razorpay, pairing, QR poster, prices, pause orders |
 | Platform admin | `/admin` | Add shops (gets QR + owner login), see who has connected Razorpay, enable or disable, "view as shop" |
@@ -49,21 +50,38 @@ Open `http://localhost:3100/s/DEMO42` on your phone or browser. With no Razorpay
 
 Ports 3100/4100 are used so it doesn't clash with other local projects on 3000/4000.
 
-## The Windows agent
+## The Windows app
 
-`npm run agent:build -- --version 1.0.0` (points at `https://api.seedhaprint.in`; pass `--server` to use another address)
+`SeedhaPrint-Setup.exe` is the one thing a shop installs. It opens by itself when Windows starts and holds everything: the owner's dashboard in its own window, and the print agent running behind it. Closing the window keeps it printing from the tray.
 
-Produces `apps/agent/build/out/SeedhaPrintAgent-Setup.exe` and copies it to `apps/web/public/downloads/`, which is where the dashboard's **Download agent** button points. Run it on macOS or Linux; it fetches Go 1.20, `rsrc` and SumatraPDF into `.toolchain/` on first use. Needs `makensis` (`brew install makensis`).
+```bash
+npm install --prefix apps/desktop --ignore-scripts
+npm run app:build -- --version 1.0.0
+```
+
+This builds on macOS or Linux, no Wine needed, and fetches Go 1.20, Electron 22, `rsrc` and SumatraPDF into `.toolchain/`. It needs `makensis` (`brew install makensis`). Addresses default to `seedhaprint.in`; pass `--web` and `--api` to change them.
+
+The installer is about 70 MB, too big for git, so copy it to the server **before** the web restart:
+
+```
+apps/web/public/downloads/SeedhaPrint-Setup.exe
+```
+
+To run the app on a Mac while developing, the Electron binary must be in place first (`node apps/desktop/node_modules/electron/install.js`, or unzip it into `dist` and write `path.txt`):
+
+```bash
+cd apps/desktop && SEEDHAPRINT_WEB_URL=http://localhost:3100 SEEDHAPRINT_AGENT=/path/to/agent node_modules/.bin/electron . --dev
+```
 
 Why it runs on Windows 7 as well as 10/11:
 
-- **Go 1.20, windows/386.** Go 1.20 is the last Go that supports Windows 7, and a 32-bit exe runs on both 32 and 64-bit Windows. One file, no runtime to install. Don't raise the Go version in `go.mod`.
-- **Printers from the Windows spooler API** (`winspool.drv`), not PowerShell or WMI, which differ or are missing on Windows 7.
+- **Electron 22** is the last Electron that supports Windows 7, 8 and 8.1. It gets no more security fixes, so the app opens only SeedhaPrint's own pages and sends every other link to the normal browser. Don't upgrade it while Windows 7 shops are supported.
+- **Go 1.20, windows/386** for the agent. Go 1.20 is the last Go that supports Windows 7, and a 32-bit exe runs on both 32 and 64-bit Windows. Don't raise the Go version in `go.mod`.
+- **Printers from the Windows spooler API** (`winspool.drv`), not PowerShell or WMI, including whether a printer can print both sides.
 - **Own CA bundle** (`apps/agent/certs/roots.pem`) because un-updated Windows 7 PCs don't trust Let's Encrypt.
-- **SumatraPDF 3.4.6 (32-bit)** for silent printing; it supports Windows 7.
-- The installer only uses `taskkill` and `icacls`, which exist on Windows 7.
+- **SumatraPDF 3.4.6 (32-bit)** for silent printing.
 
-What the agent does: pairs once with an 8-character code (one-time, 30-minute expiry), keeps a WebSocket to the API, reconnects with backoff, prints one job at a time with `copies`, `color/monochrome`, `fit`, `paper=A4`, and remembers the last 500 finished jobs so a resent job is never printed twice. It starts at Windows login (Startup folder) as the signed-in user, so it sees that user's printers. Status page: `http://localhost:47210` (also lets you re-pair).
+The agent keeps a WebSocket to the API, reconnects with backoff, prints one job at a time, and remembers the last 500 finished jobs so a resent job is never printed twice. **Printers → Connect this PC** in the app pairs it in one click. Its status page is at `http://localhost:47210`.
 
 ## How it scales to thousands of shops
 
@@ -87,11 +105,18 @@ Every shop connects its own Razorpay account, so customers pay the shop directly
 - Without keys, a shop's customers can't pay. `ALLOW_TEST_CHECKOUT=true` turns on a fake checkout for testing, and it prints for free, so keep it off in production. Razorpay test keys are the safer way to test a shop.
 - A later upgrade: Razorpay's Technology Partner OAuth gives a one-click "Connect Razorpay", once Razorpay approves the platform as a partner.
 
+## Cash
+
+Customers can choose cash when the shop allows it (**Settings → Accept cash**). The **Print cash orders directly** switch on the overview decides what happens next:
+
+- **Off (default):** the order waits as "Collect cash". The shop taps **Cash received, print** or **Cancel**. Orders nobody accepted expire after 24 hours.
+- **On:** it prints at once, before the money is collected. Fast, but anyone who scans the QR can print without paying.
+
 ## Deploying
 
 - **API:** any Node host with WebSockets (a VPS with PM2, Railway, Render, Fly). `npm run start -w @seedhaprint/api`. Put it behind HTTPS at e.g. `https://api.seedhaprint.in`. Set `NODE_ENV=production`, a long `JWT_SECRET`, `WEB_URL`, `API_URL`, `MONGO_URI` (Atlas).
 - **Web:** Vercel or any Node host. `npm run build -w @seedhaprint/web`. Set `NEXT_PUBLIC_API_URL=https://api.seedhaprint.in` and `NEXT_PUBLIC_SITE_URL=https://seedhaprint.in`, plus `NEXT_PUBLIC_WHATSAPP_NUMBER` if it changes.
-- **Agent:** the installer in `apps/web/public/downloads/` is committed and already points at `https://api.seedhaprint.in`. If the API address changes, rebuild it and commit; installed PCs must then be paired again.
+- **Windows app:** build the installer and copy it to the server (see above). If the API address changes, rebuild it; installed PCs must then be connected again.
 - **Addresses:** `WEB_URL` and `API_URL` (API `.env`), `NEXT_PUBLIC_*` (Vercel). No address is hardcoded in the code.
 - **Word files (optional):** install LibreOffice on the API server and set `SOFFICE_PATH`; the customer page then accepts .doc/.docx automatically.
 
@@ -101,8 +126,8 @@ Every shop connects its own Razorpay account, so customers pay the shop directly
 - Hosting, and buying seedhaprint.in.
 - Terms, Privacy, Refund and Contact pages, which Razorpay asks for before activating an account.
 - The installer is unsigned, so Windows SmartScreen will warn ("More info → Run anyway") until you buy a code-signing certificate.
-- Real printing on Windows 7 and Windows 10 hardware is untested. Everything up to SumatraPDF is tested (printer listing compiles against the Windows API, command lines are unit-tested, full flow runs with simulated printers).
-- Duplex, page ranges, per-page rotation and paper sizes other than A4 are deliberately left out to keep the customer flow simple.
+- The Windows app and real printing on Windows 7 and 10 are untested on real PCs. The app's logic and screens are tested on a Mac with the same Electron version, and the print flow with simulated printers.
+- Paper sizes other than A4 are deliberately left out to keep the customer flow simple.
 - Password reset is manual (admin).
 
 ## Tests

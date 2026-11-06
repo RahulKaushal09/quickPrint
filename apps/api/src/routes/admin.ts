@@ -90,7 +90,7 @@ adminRoutes.get('/stats', async (_req, res) => {
     Device.distinct('shopId', { revoked: false, online: true, lastSeenAt: { $gte: onlineSince } }),
     Job.aggregate([
       { $match: { 'payment.paidAt': { $gte: since }, status: { $in: ['queued', 'sent', 'printing', 'printed', 'failed'] } } },
-      { $group: { _id: null, jobs: { $sum: 1 }, revenue: { $sum: '$total' }, pages: { $sum: { $multiply: ['$file.pages', '$copies'] } } } },
+      { $group: { _id: null, jobs: { $sum: 1 }, revenue: { $sum: '$total' }, pages: { $sum: { $multiply: [{ $ifNull: ['$printPages', '$file.pages'] }, '$copies'] } } } },
     ]),
   ]);
   res.json({ shops, active, online: online.length, last30: agg[0] ?? { jobs: 0, revenue: 0, pages: 0 } });

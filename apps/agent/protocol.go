@@ -6,6 +6,7 @@ type Printer struct {
 	Name      string `json:"name"`
 	Status    string `json:"status"` // ready | offline | paper_out | jammed | error | busy
 	IsDefault bool   `json:"isDefault"`
+	Duplex    bool   `json:"duplex"`
 }
 
 type JobOrder struct {
@@ -13,6 +14,7 @@ type JobOrder struct {
 	Printer    string `json:"printer"`
 	Copies     int    `json:"copies"`
 	Color      bool   `json:"color"`
+	Duplex     bool   `json:"duplex"`
 	Pages      int    `json:"pages"`
 	FileName   string `json:"fileName"`
 	FileURL    string `json:"fileUrl"`

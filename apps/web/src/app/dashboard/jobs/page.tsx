@@ -17,14 +17,14 @@ const TABS = [
 type Tab = (typeof TABS)[number]['key'];
 
 const EMPTY: Record<Tab, string> = {
-  active: 'Nothing is printing right now.',
+  active: 'No orders waiting or printing right now.',
   done: 'Printed jobs appear here.',
   issues: 'No failed or refunded jobs. Nice.',
   all: 'No jobs yet. Share your QR to get the first one.',
 };
 
 export default function JobsPage() {
-  const [tab, setTab] = useState<Tab>('all');
+  const [tab, setTab] = useState<Tab>('active');
   const [jobs, setJobs] = useState<ShopJob[] | null>(null);
   const [more, setMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);

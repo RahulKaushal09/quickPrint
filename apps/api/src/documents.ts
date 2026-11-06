@@ -9,7 +9,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { degrees, PDFDocument, type PDFPage } from 'pdf-lib';
 import sharp from 'sharp';
-import { LIMITS } from '@seedhaprint/shared';
+import { LIMITS, type PageChoice } from '@seedhaprint/shared';
 import { config } from './config';
 
 const run = promisify(execFile);
@@ -95,21 +95,30 @@ async function officeToPdf(buf: Buffer, name: string): Promise<Buffer> {
   }
 }
 
+/** Adds another upload after the pages already there. */
+export async function appendPdf(existing: Buffer, addition: Buffer): Promise<Buffer> {
+  const [doc, extra] = await Promise.all([PDFDocument.load(existing, { updateMetadata: false }), PDFDocument.load(addition, { updateMetadata: false })]);
+  for (const page of await doc.copyPages(extra, extra.getPageIndices())) doc.addPage(page);
+  return Buffer.from(await doc.save());
+}
+
 /**
- * The file the printer gets. The sheet is always upright A4 and the customer's
- * document turns on it, scaled to fit, exactly as the preview shows. Building
- * upright pages also stops printer drivers turning wide pages by themselves.
- * Upright documents with no rotation go through untouched.
+ * The file the printer gets: the chosen pages in the chosen order. The sheet is
+ * always upright A4 and each page turns on it, scaled to fit, exactly as the
+ * preview shows. Building upright pages also stops printer drivers turning wide
+ * pages by themselves. A full upright document with no changes goes through untouched.
  */
-export async function layoutForPrint(pdf: Buffer, rotation: number): Promise<Buffer> {
+export async function layoutForPrint(pdf: Buffer, choices: PageChoice[]): Promise<Buffer> {
   const src = await PDFDocument.load(pdf, { updateMetadata: false });
   const pages = src.getPages();
-  const angleOf = (p: PDFPage) => (((p.getRotation().angle + rotation) % 360) + 360) % 360;
-  const sideways = (p: PDFPage) => {
-    const { width, height } = p.getCropBox();
-    return angleOf(p) % 180 === 0 ? width > height : height > width;
+  const list = choices.length ? choices : pages.map((_, i) => ({ p: i + 1, r: 0 as const }));
+  const angleOf = (page: PDFPage, r: number) => (((page.getRotation().angle + r) % 360) + 360) % 360;
+  const sideways = (page: PDFPage, r: number) => {
+    const { width, height } = page.getCropBox();
+    return angleOf(page, r) % 180 === 0 ? width > height : height > width;
   };
-  if (!rotation && !pages.some(sideways)) return pdf;
+  const unchanged = list.length === pages.length && list.every((c, i) => c.p === i + 1 && !c.r && !sideways(pages[i]!, 0));
+  if (unchanged) return pdf;
 
   // Embedding copies only page content, so filled-in form fields must become content first.
   try {
@@ -118,15 +127,17 @@ export async function layoutForPrint(pdf: Buffer, rotation: number): Promise<Buf
     // Some forms can't be flattened. The page itself still prints.
   }
   const out = await PDFDocument.create();
-  for (const page of pages) {
-    // Blank pages have no content to embed, but still count as a printed sheet.
+  for (const { p, r } of list) {
+    const page = pages[p - 1];
+    if (!page) continue;
+    // Blank pages have no content to embed, but still count as a printed side.
     if (!page.node.Contents()) {
       out.addPage([A4.w, A4.h]);
       continue;
     }
     const box = page.getCropBox();
     const embedded = await out.embedPage(page, { left: box.x, bottom: box.y, right: box.x + box.width, top: box.y + box.height });
-    const angle = angleOf(page);
+    const angle = angleOf(page, r);
     const turned = angle % 180 !== 0;
     const scale = Math.min(A4.w / (turned ? box.height : box.width), A4.h / (turned ? box.width : box.height));
     const w = box.width * scale;

@@ -35,6 +35,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       .catch((e) => setError(e.message));
   }, [router]);
 
+  // In the desktop app, a new cash order pops up even when the window is hidden in the tray.
+  useEffect(() => {
+    if (!ctx || !window.seedhaPrintDesktop) return;
+    let last = -1;
+    const check = () =>
+      api<{ cashWaiting: number }>('/api/shop/overview')
+        .then(({ cashWaiting }) => {
+          if (last >= 0 && cashWaiting > last) new Notification('SeedhaPrint', { body: 'New cash order. Collect the money, then tap Cash received.' });
+          last = cashWaiting;
+        })
+        .catch(() => {});
+    void check();
+    const t = setInterval(check, 8000);
+    return () => clearInterval(t);
+  }, [ctx]);
+
   if (!ctx) {
     return (
       <div className="grid min-h-dvh place-items-center">

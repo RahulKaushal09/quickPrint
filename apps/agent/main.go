@@ -1,7 +1,7 @@
 // SeedhaPrint Agent: connects a print shop's Windows PC to SeedhaPrint and
-// prints paid customer jobs on the shop's printers.
+// prints customer jobs on the shop's printers. The desktop app starts it.
 //
-//	SeedhaPrintAgent.exe                     run (what the Startup shortcut does)
+//	SeedhaPrintAgent.exe                     run
 //	SeedhaPrintAgent.exe pair CODE [SERVER]  pair this PC with a shop (used by the installer)
 //	SeedhaPrintAgent.exe status              open the status page
 //
@@ -24,16 +24,22 @@ import (
 var (
 	version       = "dev"                   // set by the build: -X main.version=1.0.0
 	defaultServer = "http://localhost:4100" // set by the build: -X main.defaultServer=https://api.example.com
+	noBrowser     bool
 )
 
 func main() {
 	args := os.Args[1:]
 	for i := 0; i < len(args); i++ {
-		if args[i] == "--dev" {
+		switch args[i] {
+		case "--dev":
 			devMode = true
-			args = append(args[:i], args[i+1:]...)
-			i--
+		case "--no-browser": // the desktop app has its own screens
+			noBrowser = true
+		default:
+			continue
 		}
+		args = append(args[:i], args[i+1:]...)
+		i--
 	}
 	cmd := "run"
 	if len(args) > 0 {
@@ -110,7 +116,7 @@ func run() {
 	logf("SeedhaPrint Agent %s starting on %s, data in %s", version, osDescription(), dataDir())
 	a := newAgent(cfg)
 	go a.serveStatus(ln)
-	if cfg == nil && runtime.GOOS == "windows" {
+	if cfg == nil && runtime.GOOS == "windows" && !noBrowser {
 		openBrowser("http://" + statusAddr)
 	}
 	a.Run()

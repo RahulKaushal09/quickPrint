@@ -11,8 +11,9 @@ export interface ShopData {
   phone: string;
   active: boolean;
   accepting: boolean;
-  rates: { bwPerPage: number; colorPerPage: number; colorEnabled: boolean };
-  printers: { bw: string[]; color: string[] };
+  rates: { bwPerPage: number; colorPerPage: number; colorEnabled: boolean; duplexEnabled: boolean };
+  printers: { bw: string[]; color: string[]; duplex: string[] };
+  cash: { enabled: boolean; autoPrint: boolean };
   razorpay: { keyId: string };
 }
 

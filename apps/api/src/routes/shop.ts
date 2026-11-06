@@ -51,8 +51,9 @@ shopRoutes.patch('/', async (req, res) => {
       city: z.string().trim().max(60),
       phone: z.string().trim().max(20),
       accepting: z.boolean(),
-      rates: z.object({ bwPerPage: paise.min(50), colorPerPage: paise.min(50), colorEnabled: z.boolean() }),
-      printers: z.object({ bw: z.array(z.string().max(200)).max(20), color: z.array(z.string().max(200)).max(20) }),
+      rates: z.object({ bwPerPage: paise.min(50), colorPerPage: paise.min(50), colorEnabled: z.boolean(), duplexEnabled: z.boolean() }),
+      printers: z.object({ bw: z.array(z.string().max(200)).max(20), color: z.array(z.string().max(200)).max(20), duplex: z.array(z.string().max(200)).max(20) }),
+      cash: z.object({ enabled: z.boolean(), autoPrint: z.boolean() }),
     })
     .partial()
     .parse(req.body);
@@ -66,24 +67,25 @@ shopRoutes.patch('/', async (req, res) => {
 shopRoutes.get('/overview', async (req, res) => {
   const shopId = req.shopId!;
   const since = startOfToday();
-  const [today, open, devices] = await Promise.all([
+  const [today, open, cashWaiting, devices] = await Promise.all([
     Job.aggregate([
       { $match: { shopId: new mongoose.Types.ObjectId(shopId), 'payment.paidAt': { $gte: since }, status: { $in: [...PAID_STATUSES] } } },
       {
         $group: {
           _id: null,
           jobs: { $sum: 1 },
-          pages: { $sum: { $multiply: ['$file.pages', '$copies'] } },
+          pages: { $sum: { $multiply: [{ $ifNull: ['$printPages', '$file.pages'] }, '$copies'] } },
           revenue: { $sum: { $cond: [{ $eq: ['$status', 'refunded'] }, 0, '$total'] } },
           failed: { $sum: { $cond: [{ $in: ['$status', ['failed']] }, 1, 0] } },
         },
       },
     ]),
     Job.countDocuments({ shopId, status: { $in: ['queued', 'sent', 'printing'] } }),
+    Job.countDocuments({ shopId, status: 'awaiting_cash' }),
     Device.find({ shopId, revoked: false }).lean(),
   ]);
   const t = today[0] ?? { jobs: 0, pages: 0, revenue: 0, failed: 0 };
-  res.json({ today: { jobs: t.jobs, pages: t.pages, revenue: t.revenue, failed: t.failed }, open, devices: devices.map(devicePublic) });
+  res.json({ today: { jobs: t.jobs, pages: t.pages, revenue: t.revenue, failed: t.failed }, open, cashWaiting, devices: devices.map(devicePublic) });
 });
 
 shopRoutes.get('/jobs', async (req, res) => {
@@ -91,7 +93,7 @@ shopRoutes.get('/jobs', async (req, res) => {
     .object({ status: z.enum(['active', 'done', 'issues', 'all']).default('all'), before: z.string().optional(), limit: z.coerce.number().min(1).max(100).default(40) })
     .parse(req.query);
   const filter: Record<string, unknown> = { shopId: req.shopId, status: { $ne: 'draft' } };
-  if (q.status === 'active') filter.status = { $in: ['queued', 'sent', 'printing'] };
+  if (q.status === 'active') filter.status = { $in: ['awaiting_cash', 'queued', 'sent', 'printing'] };
   if (q.status === 'done') filter.status = 'printed';
   if (q.status === 'issues') filter.status = { $in: ['failed', 'refunded'] };
   if (q.status === 'all') filter.status = { $nin: ['draft', 'expired'] };
@@ -105,6 +107,21 @@ async function myJob(shopId: string, id: string) {
   if (!job) throw new HttpError(404, 'Job not found');
   return job;
 }
+
+shopRoutes.post('/jobs/:id/cash-received', async (req, res) => {
+  const job = await myJob(req.shopId!, String(req.params.id));
+  const next = await transition(job._id, 'queued', { only: ['awaiting_cash'], note: 'Cash received by shop', set: { 'payment.paidAt': new Date() } });
+  if (!next) throw new HttpError(409, 'This job is not waiting for cash');
+  void dispatchShop(job.shopId);
+  res.json({ job: shopJob(next) });
+});
+
+shopRoutes.post('/jobs/:id/cash-cancel', async (req, res) => {
+  const job = await myJob(req.shopId!, String(req.params.id));
+  const next = await transition(job._id, 'expired', { only: ['awaiting_cash'], note: 'Cancelled by shop' });
+  if (!next) throw new HttpError(409, 'This job is not waiting for cash');
+  res.json({ job: shopJob(next) });
+});
 
 shopRoutes.post('/jobs/:id/fail', async (req, res) => {
   const { reason } = z.object({ reason: z.string().trim().min(2).max(200) }).parse(req.body);
@@ -134,7 +151,7 @@ shopRoutes.get('/jobs/:id/file', async (req, res) => {
   const job = await myJob(req.shopId!, String(req.params.id));
   if (!job.file.key) throw new HttpError(410, 'The file was already deleted');
   res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(job.file.name)}.pdf"`);
-  await sendPrintFile(res, job.file, job.rotation);
+  await sendPrintFile(res, job);
 });
 
 // ---------------------------------------------------------------- the shop's own Razorpay

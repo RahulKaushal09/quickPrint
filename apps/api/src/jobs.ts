@@ -46,7 +46,7 @@ export async function markPaid(job: JobDoc, paymentId: string): Promise<JobDoc |
 export async function refundJob(job: JobDoc, note: string): Promise<JobDoc | null> {
   if (job.status !== 'failed') return null;
   let refundId = '';
-  if (job.payment?.paymentId && !job.payment.mock) {
+  if (job.payment?.paymentId && !job.payment.mock && job.payment.method !== 'cash') {
     const keys = await shopKeys(job.shopId);
     if (!keys) throw new HttpError(409, 'Connect your Razorpay account again to refund this job');
     try {

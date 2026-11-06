@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { canMove, quote, rupees } from '../src/index';
+import { canMove, quote, rupees, sheetsFor } from '../src/index';
 
 const card = { bwPerPage: 200, colorPerPage: 1000, colorEnabled: true };
 
@@ -26,4 +26,16 @@ test('job transitions only move forward', () => {
 test('rupees formats Indian style', () => {
   assert.equal(rupees(150000), '₹1,500');
   assert.equal(rupees(150), '₹1.50');
+});
+
+test('cash jobs wait for the shop, then join the queue', () => {
+  assert.ok(canMove('draft', 'awaiting_cash'));
+  assert.ok(canMove('awaiting_cash', 'queued'));
+  assert.ok(!canMove('awaiting_cash', 'printing'));
+});
+
+test('double-sided printing uses half the paper, rounding up', () => {
+  assert.equal(sheetsFor(5, 'single'), 5);
+  assert.equal(sheetsFor(5, 'double'), 3);
+  assert.equal(sheetsFor(4, 'double'), 2);
 });
