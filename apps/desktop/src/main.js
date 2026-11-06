@@ -138,6 +138,7 @@ function createWindow() {
 }
 
 function showWindow() {
+  if (!app.isReady()) return; // still starting: the window is about to open anyway
   if (!win) return createWindow();
   if (win.isMinimized()) win.restore();
   win.show();
