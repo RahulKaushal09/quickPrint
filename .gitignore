@@ -1,0 +1,17 @@
+node_modules
+.next
+dist
+.env
+.env.local
+.data
+storage
+.toolchain
+.npm-cache
+*.log
+.DS_Store
+*.tsbuildinfo
+next-env.d.ts
+apps/agent/dev-data
+apps/agent/build/out
+apps/agent/*.syso
+apps/web/public/downloads/*.exe

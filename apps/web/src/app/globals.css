@@ -1,0 +1,121 @@
+@import 'tailwindcss';
+
+/*
+ * QuickPrint design tokens.
+ * The palette is printing's own: paper, ink (K) and the three process colours
+ * (C, M, Y). Ink carries the UI; CMY appear only where colour means something
+ * (colour printing, brand mark, status accents), so the product feels calm
+ * and trustworthy at the counter and on a cheap Android phone alike.
+ */
+@theme {
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, 'SFMono-Regular', monospace;
+
+  --color-paper: #f6f5f1;
+  --color-paper-2: #efede6;
+  --color-surface: #ffffff;
+  --color-line: #e6e3da;
+  --color-line-strong: #d5d1c5;
+
+  --color-ink: #0b1220;
+  --color-ink-2: #1c2433;
+  --color-ink-soft: #4a5263;
+  --color-ink-mute: #7c8394;
+
+  --color-cyan: #00a3e0;
+  --color-cyan-soft: #e3f5fc;
+  --color-magenta: #e5007d;
+  --color-magenta-soft: #fde6f2;
+  --color-yellow: #ffd200;
+  --color-yellow-soft: #fff7d1;
+
+  --color-ok: #0b8a5b;
+  --color-ok-soft: #e1f5ec;
+  --color-warn: #b45309;
+  --color-warn-soft: #fdf0dc;
+  --color-bad: #d93a3f;
+  --color-bad-soft: #fde7e7;
+
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
+  --radius-3xl: 1.75rem;
+
+  --shadow-card: 0 1px 0 rgb(11 18 32 / 0.04), 0 1px 3px rgb(11 18 32 / 0.06);
+  --shadow-lift: 0 1px 0 rgb(11 18 32 / 0.04), 0 12px 32px -12px rgb(11 18 32 / 0.18);
+  --shadow-sheet: 0 -12px 40px -12px rgb(11 18 32 / 0.25);
+
+  --animate-rise: rise 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-fade: fade 0.3s ease both;
+  --animate-sheet: sheet 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-feed: feed 1.6s cubic-bezier(0.6, 0, 0.4, 1) infinite;
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes sheet {
+    from { transform: translateY(100%); }
+    to { transform: none; }
+  }
+  @keyframes feed {
+    0% { transform: translateY(-100%); }
+    60%, 100% { transform: translateY(0); }
+  }
+}
+
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-feature-settings: 'ss01', 'cv11';
+  }
+  ::selection {
+    background: var(--color-yellow);
+    color: var(--color-ink);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-cyan);
+    outline-offset: 2px;
+  }
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@utility cmyk-bar {
+  background: linear-gradient(90deg, var(--color-cyan) 0 33.33%, var(--color-magenta) 33.33% 66.66%, var(--color-yellow) 66.66% 100%);
+}
+
+/* Faint registration grid used behind hero areas. */
+@utility paper-grid {
+  background-image:
+    linear-gradient(to right, rgb(11 18 32 / 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(11 18 32 / 0.045) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+@media print {
+  body {
+    background: #fff;
+  }
+  .no-print {
+    display: none !important;
+  }
+  @page {
+    size: A4;
+    margin: 0;
+  }
+}

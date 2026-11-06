@@ -1,0 +1,231 @@
+// The agent hub: keeps a WebSocket per connected shop PC and hands it paid
+// jobs.
+//
+// Scaling: each API server only talks to the PCs connected to it. A job is
+// claimed with an atomic queued -> sent update, so any number of servers can
+// run side by side against the same MongoDB with no Redis. The server that
+// took the payment dispatches at once; every server also sweeps its own shops
+// every few seconds, which covers payments taken on another server.
+
+import crypto from 'node:crypto';
+import type { IncomingMessage } from 'node:http';
+import type { Types } from 'mongoose';
+import { WebSocket, WebSocketServer } from 'ws';
+import type { AgentMessage, AgentPrinter, JobOrder, ServerMessage } from '@quickprint/shared';
+import { config } from './config';
+import { transition } from './jobs';
+import { Device, Job, Shop, type DeviceDoc, type JobDoc } from './models';
+
+interface Conn {
+  ws: WebSocket;
+  deviceId: string;
+  shopId: string;
+  printers: AgentPrinter[];
+  alive: boolean;
+}
+
+const conns = new Map<string, Conn>(); // deviceId -> connection
+const byShop = new Map<string, Set<string>>(); // shopId -> deviceIds
+
+/** A PC counts as online while connected and heard from within this window (the window covers a server that died without marking its PCs offline). */
+export const ONLINE_WINDOW_MS = 75_000;
+
+export const hashToken = (t: string) => crypto.createHash('sha256').update(t).digest('hex');
+
+function send(c: Conn, msg: ServerMessage) {
+  if (c.ws.readyState === WebSocket.OPEN) c.ws.send(JSON.stringify(msg));
+}
+
+export async function authenticate(req: IncomingMessage): Promise<DeviceDoc | null> {
+  const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  if (!token) return null;
+  return Device.findOne({ tokenHash: hashToken(token), revoked: false });
+}
+
+export function attach(wss: WebSocketServer) {
+  wss.on('connection', async (ws: WebSocket, _req: IncomingMessage, device: DeviceDoc) => {
+    const deviceId = String(device._id);
+    const shopId = String(device.shopId);
+    conns.get(deviceId)?.ws.close(4000, 'Replaced by a newer connection');
+
+    const c: Conn = { ws, deviceId, shopId, printers: device.printers as AgentPrinter[], alive: true };
+    conns.set(deviceId, c);
+    if (!byShop.has(shopId)) byShop.set(shopId, new Set());
+    byShop.get(shopId)!.add(deviceId);
+
+    // Listeners go on before any await, or the agent's first 'hello' would be lost.
+    ws.on('pong', () => (c.alive = true));
+    ws.on('message', (raw) => {
+      let msg: AgentMessage;
+      try {
+        msg = JSON.parse(String(raw));
+      } catch {
+        return;
+      }
+      handle(c, msg).catch((e) => console.error('[hub]', deviceId, e));
+    });
+    ws.on('close', () => {
+      if (conns.get(deviceId) !== c) return; // already replaced
+      conns.delete(deviceId);
+      byShop.get(shopId)?.delete(deviceId);
+      void onDisconnect(deviceId, shopId);
+    });
+
+    const shop = await Shop.findById(shopId).lean();
+    send(c, { type: 'welcome', deviceId, shopName: shop?.name ?? '', shopCode: shop?.code ?? '' });
+  });
+
+  // Drop sockets that stopped answering pings (pulled network cable, sleeping PC).
+  setInterval(() => {
+    for (const c of conns.values()) {
+      if (!c.alive) {
+        c.ws.terminate();
+        continue;
+      }
+      c.alive = false;
+      c.ws.ping();
+    }
+  }, 25_000).unref();
+
+  setInterval(() => void sweep().catch((e) => console.error('[hub] sweep', e)), 3_000).unref();
+}
+
+async function handle(c: Conn, msg: AgentMessage) {
+  const now = new Date();
+  switch (msg.type) {
+    case 'hello':
+      c.printers = msg.printers ?? [];
+      await Device.updateOne(
+        { _id: c.deviceId },
+        { printers: c.printers, version: msg.version, os: msg.os, name: msg.hostname || undefined, lastSeenAt: now, online: true },
+      );
+      await dispatchShop(c.shopId);
+      return;
+    case 'printers':
+      c.printers = msg.printers ?? [];
+      await Device.updateOne({ _id: c.deviceId }, { printers: c.printers, lastSeenAt: now, online: true });
+      await dispatchShop(c.shopId);
+      return;
+    case 'ping':
+      send(c, { type: 'pong' });
+      await Device.updateOne({ _id: c.deviceId }, { lastSeenAt: now, online: true });
+      return;
+  }
+
+  if (msg.jobId.startsWith('test-')) return;
+  const mine = { deviceId: c.deviceId };
+  switch (msg.type) {
+    case 'job.accepted':
+      await Job.updateOne({ _id: msg.jobId, ...mine, status: 'sent' }, { acceptedAt: now });
+      return;
+    case 'job.printing':
+      await transition(msg.jobId, 'printing', { only: ['sent'], filter: mine, note: 'Printer started' });
+      return;
+    case 'job.printed':
+      await transition(msg.jobId, 'printed', { only: ['sent', 'printing'], filter: mine, note: 'Printed', set: { printedAt: now } });
+      return;
+    case 'job.failed':
+      await transition(msg.jobId, 'failed', {
+        only: ['sent', 'printing'],
+        filter: mine,
+        note: msg.error,
+        set: { error: String(msg.error || 'Printer error').slice(0, 300) },
+      });
+      return;
+  }
+}
+
+async function onDisconnect(deviceId: string, shopId: string) {
+  await Device.updateOne({ _id: deviceId }, { online: false });
+  // Anything handed over but not yet confirmed goes back to the queue for another PC (or this one later).
+  const stuck = await Job.find({ deviceId, status: 'sent', acceptedAt: null }).select('_id');
+  for (const j of stuck) await transition(j._id, 'queued', { only: ['sent'], note: 'Shop PC disconnected, re-queued' });
+  if (stuck.length) await dispatchShop(shopId);
+}
+
+/** Pick a connected PC and printer for this job, or null if none can take it now. */
+function route(job: JobDoc, shopPrinters: { bw: string; color: string }, devices: Conn[]): { c: Conn; printer: string } | null {
+  const wanted = job.mode === 'color' ? shopPrinters.color : shopPrinters.bw;
+  const usable = (p: AgentPrinter) => p.status !== 'offline';
+  if (wanted) {
+    for (const c of devices) if (c.printers.some((p) => p.name === wanted && usable(p))) return { c, printer: wanted };
+    // The mapped printer belongs to a PC that isn't connected here; leave it for that PC.
+    return null;
+  }
+  for (const c of devices) {
+    const p = c.printers.find((x) => x.isDefault && usable(x)) ?? c.printers.find(usable);
+    if (p) return { c, printer: p.name };
+  }
+  return null;
+}
+
+export function orderFor(job: JobDoc, printer: string): JobOrder {
+  return {
+    jobId: String(job._id),
+    printer,
+    copies: job.copies,
+    color: job.mode === 'color',
+    pages: job.file.pages,
+    fileName: job.file.name,
+    fileUrl: `/api/agent/jobs/${job._id}/file`,
+    pickupCode: job.pickupCode,
+  };
+}
+
+/** Hand every queued job of this shop to a connected PC. */
+export async function dispatchShop(shopId: string | Types.ObjectId) {
+  const ids = byShop.get(String(shopId));
+  if (!ids?.size) return;
+  const devices = [...ids].map((id) => conns.get(id)!).filter(Boolean);
+  const shop = await Shop.findById(shopId).select('printers').lean();
+  if (!shop) return;
+
+  const queued = await Job.find({ shopId, status: 'queued' }).sort({ createdAt: 1 }).limit(20);
+  for (const job of queued) {
+    const r = route(job, shop.printers as { bw: string; color: string }, devices);
+    if (!r) continue;
+    const claimed = await transition(job._id, 'sent', {
+      only: ['queued'],
+      note: `Sent to ${r.printer}`,
+      set: { deviceId: r.c.deviceId, printer: r.printer, sentAt: new Date(), acceptedAt: null },
+    });
+    if (claimed) send(r.c, { type: 'job', job: orderFor(claimed, r.printer) });
+  }
+}
+
+async function sweep() {
+  if (!byShop.size) return;
+  // Re-queue jobs a PC never confirmed (lost message, crashed agent).
+  const cutoff = new Date(Date.now() - config.ackTimeoutSeconds * 1000);
+  const local = [...conns.keys()];
+  const stale = await Job.find({ deviceId: { $in: local }, status: 'sent', acceptedAt: null, sentAt: { $lt: cutoff } }).select('_id');
+  for (const j of stale) await transition(j._id, 'queued', { only: ['sent'], note: 'No answer from shop PC, re-queued' });
+
+  const shops = [...byShop.entries()].filter(([, s]) => s.size).map(([id]) => id);
+  const waiting: string[] = (await Job.distinct('shopId', { status: 'queued', shopId: { $in: shops } })).map(String);
+  for (const id of waiting) await dispatchShop(id);
+}
+
+/** Send a test page to one printer of a connected PC. Returns false if the PC isn't on this server. */
+export function sendTestPage(deviceId: string, printer: string, shopCode: string): boolean {
+  const c = conns.get(deviceId);
+  if (!c) return false;
+  send(c, {
+    type: 'job',
+    job: {
+      jobId: `test-${crypto.randomBytes(4).toString('hex')}`,
+      printer,
+      copies: 1,
+      color: true,
+      pages: 1,
+      fileName: 'Test page.pdf',
+      fileUrl: `/api/agent/test-page?printer=${encodeURIComponent(printer)}`,
+      pickupCode: shopCode,
+    },
+  });
+  return true;
+}
+
+export function connectedHere(deviceId: string) {
+  return conns.has(deviceId);
+}
