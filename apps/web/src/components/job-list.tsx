@@ -17,7 +17,6 @@ export interface ShopJob {
   copies: number;
   rate: number;
   total: number;
-  platformFee: number;
   printer: string;
   error: string;
   paidAt?: string;

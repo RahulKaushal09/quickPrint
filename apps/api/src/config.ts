@@ -15,11 +15,11 @@ export const config = {
   // so QR codes can never silently point at localhost.
   webUrl: req('WEB_URL', prod ? undefined : 'http://localhost:3100').replace(/\/$/, ''),
   apiUrl: req('API_URL', prod ? undefined : 'http://localhost:4100').replace(/\/$/, ''),
-  razorpay: {
-    keyId: env.RAZORPAY_KEY_ID || '',
-    keySecret: env.RAZORPAY_KEY_SECRET || '',
-    webhookSecret: env.RAZORPAY_WEBHOOK_SECRET || '',
-  },
+  /** Encrypts each shop's Razorpay secrets at rest. */
+  encryptionKey: req('ENCRYPTION_KEY', prod ? undefined : 'dev-only-encryption-key'),
+  razorpayApiUrl: (env.RAZORPAY_API_URL || 'https://api.razorpay.com/v1').replace(/\/$/, ''),
+  /** Fake checkout for shops without Razorpay. Prints for free, so production needs an explicit opt-in. */
+  allowTestCheckout: env.ALLOW_TEST_CHECKOUT ? env.ALLOW_TEST_CHECKOUT === 'true' : !prod,
   s3: env.S3_BUCKET
     ? {
         bucket: env.S3_BUCKET,
@@ -37,5 +37,3 @@ export const config = {
   /** A job handed to a PC that hasn't confirmed it within this time goes back to the queue. */
   ackTimeoutSeconds: 45,
 };
-
-export const paymentsLive = Boolean(config.razorpay.keyId && config.razorpay.keySecret);

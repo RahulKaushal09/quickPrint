@@ -10,8 +10,9 @@ import { config } from './config';
 import { DocumentError } from './documents';
 import { dispatchShop } from './hub';
 import { markPaid } from './jobs';
-import { Job, User } from './models';
+import { Job, Shop, User } from './models';
 import { webhookSignatureValid } from './payments';
+import { decrypt } from './secrets';
 import { adminRoutes } from './routes/admin';
 import { agentRoutes } from './routes/agent';
 import { publicRoutes } from './routes/public';
@@ -23,15 +24,19 @@ export function createApp() {
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
   app.use(cors({ origin: [config.webUrl], credentials: false }));
 
-  // Razorpay webhook needs the raw body for its signature, so it goes before express.json().
-  app.post('/api/payments/webhook', express.raw({ type: '*/*', limit: '1mb' }), async (req, res) => {
-    if (!webhookSignatureValid(req.body, String(req.headers['x-razorpay-signature'] || ''))) {
+  // Each shop's Razorpay account sends webhooks to its own address, signed with that shop's secret.
+  // The signature covers the raw body, so this goes before express.json().
+  app.post('/api/payments/webhook/:code', express.raw({ type: '*/*', limit: '1mb' }), async (req, res) => {
+    const shop = await Shop.findOne({ code: String(req.params.code).toUpperCase() }).select('+razorpay.webhookSecret');
+    const secret = shop?.razorpay.webhookSecret;
+    if (!secret || !webhookSignatureValid(decrypt(secret), req.body, String(req.headers['x-razorpay-signature'] || ''))) {
       return res.status(400).json({ error: 'Bad signature' });
     }
+    await Shop.updateOne({ _id: shop!._id }, { 'razorpay.webhookSeenAt': new Date() });
     const event = JSON.parse(req.body.toString('utf8'));
     const p = event?.payload?.payment?.entity;
     if ((event.event === 'payment.captured' || event.event === 'order.paid') && p?.order_id) {
-      const job = await Job.findOne({ 'payment.orderId': p.order_id });
+      const job = await Job.findOne({ shopId: shop!._id, 'payment.orderId': p.order_id });
       if (job && p.amount === job.total && (await markPaid(job, p.id))) await dispatchShop(String(job.shopId));
     }
     res.json({ ok: true });

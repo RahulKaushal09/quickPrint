@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowRight, Check, Download, FileStack, IndianRupee, Inbox, MonitorSmartphone, Printer, QrCode, TriangleAlert } from 'lucide-react';
+import { ArrowRight, Check, CreditCard, Download, FileStack, IndianRupee, Inbox, MonitorSmartphone, Printer, QrCode, TriangleAlert } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { PageHeader } from '@/components/app-shell';
@@ -11,7 +11,7 @@ import { cx, rupees, timeAgo } from '@/lib/format';
 import { useShop } from './shop-context';
 
 interface Overview {
-  today: { jobs: number; pages: number; revenue: number; earnings: number; failed: number };
+  today: { jobs: number; pages: number; revenue: number; failed: number };
   open: number;
   devices: { id: string; name: string; online: boolean; lastSeenAt?: string; printers: { name: string; status: string }[] }[];
 }
@@ -58,7 +58,8 @@ export default function OverviewPage() {
   const setupSteps = [
     { done: (data?.devices.length ?? 0) > 0, label: 'Install the agent on your shop PC', href: '/dashboard/printers', icon: Download },
     { done: hasPrinter, label: 'Connect it and check your printers', href: '/dashboard/printers', icon: Printer },
-    { done: Boolean(shop.printers.bw || shop.printers.color), label: 'Choose which printer does B/W and colour', href: '/dashboard/printers', icon: MonitorSmartphone },
+    { done: shop.printers.bw.length > 0 || shop.printers.color.length > 0, label: 'Choose which printers do B/W and colour', href: '/dashboard/printers', icon: MonitorSmartphone },
+    { done: Boolean(shop.razorpay?.keyId), label: 'Connect your Razorpay account', href: '/dashboard/payments', icon: CreditCard },
     { done: (data?.today.jobs ?? 0) > 0 || (jobs?.length ?? 0) > 0, label: 'Put up your QR poster', href: '/dashboard/qr', icon: QrCode },
   ];
   const setupLeft = setupSteps.filter((s) => !s.done).length;
@@ -81,7 +82,7 @@ export default function OverviewPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
-        <Stat label="Today's earnings" value={data ? rupees(data.today.earnings) : null} icon={<IndianRupee className="size-4" />} accent="ok" hint={data && data.today.revenue !== data.today.earnings ? `${rupees(data.today.revenue)} collected` : 'After platform fee'} />
+        <Stat label="Today's earnings" value={data ? rupees(data.today.revenue) : null} icon={<IndianRupee className="size-4" />} accent="ok" hint="Before Razorpay charges" />
         <Stat label="Jobs today" value={data ? String(data.today.jobs) : null} icon={<Inbox className="size-4" />} accent="cyan" hint={data?.open ? `${data.open} in progress` : 'All caught up'} />
         <Stat label="Pages printed" value={data ? data.today.pages.toLocaleString('en-IN') : null} icon={<FileStack className="size-4" />} accent="magenta" hint="Today, all printers" />
         <Stat label="Issues" value={data ? String(data.today.failed) : null} icon={<TriangleAlert className="size-4" />} accent={data?.today.failed ? 'bad' : 'yellow'} hint={data?.today.failed ? 'Needs attention' : 'No problems'} />

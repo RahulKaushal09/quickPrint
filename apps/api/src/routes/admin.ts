@@ -1,4 +1,4 @@
-// Platform admin: onboard shops, set fees and Razorpay Route accounts, see the whole fleet.
+// Platform admin: onboard shops and see the whole fleet.
 
 import bcrypt from 'bcryptjs';
 import { Router } from 'express';
@@ -14,7 +14,6 @@ export const adminRoutes = Router();
 adminRoutes.use(requireUser, requireAdmin);
 
 const paise = z.number().int().min(50).max(100_000);
-const fee = z.object({ type: z.enum(['percent', 'flat']), value: z.number().int().min(0).max(100_000) });
 
 adminRoutes.get('/shops', async (_req, res) => {
   const since30 = new Date(Date.now() - 30 * 86400_000);
@@ -24,7 +23,7 @@ adminRoutes.get('/shops', async (_req, res) => {
     Device.distinct('shopId', { revoked: false, online: true, lastSeenAt: { $gte: onlineSince } }),
     Job.aggregate([
       { $match: { 'payment.paidAt': { $gte: since30 }, status: { $in: [...PAID_STATUSES].filter((s) => s !== 'refunded') } } },
-      { $group: { _id: '$shopId', jobs: { $sum: 1 }, revenue: { $sum: '$total' }, fees: { $sum: '$platformFee' } } },
+      { $group: { _id: '$shopId', jobs: { $sum: 1 }, revenue: { $sum: '$total' } } },
     ]),
     User.find({ role: 'owner' }).select('name phone shopId').lean(),
   ]);
@@ -36,7 +35,7 @@ adminRoutes.get('/shops', async (_req, res) => {
       ...s,
       id: String(s._id),
       online: onlineSet.has(String(s._id)),
-      last30: vol.get(String(s._id)) ?? { jobs: 0, revenue: 0, fees: 0 },
+      last30: vol.get(String(s._id)) ?? { jobs: 0, revenue: 0 },
       owner: ownerOf.get(String(s._id)) ?? null,
       qrUrl: `${config.webUrl}/s/${s.code}`,
     })),
@@ -54,8 +53,6 @@ adminRoutes.post('/shops', async (req, res) => {
       ownerPhone: z.string().trim().regex(/^\d{10}$/, 'Owner phone must be 10 digits'),
       ownerPassword: z.string().min(6).max(100),
       rates: z.object({ bwPerPage: paise, colorPerPage: paise, colorEnabled: z.boolean() }).optional(),
-      fee: fee.optional(),
-      razorpayAccountId: z.string().trim().max(40).default(''),
     })
     .parse(req.body);
   if (await User.exists({ phone: body.ownerPhone })) throw new HttpError(409, 'That phone number already has an account');
@@ -69,8 +66,6 @@ adminRoutes.post('/shops', async (req, res) => {
     city: body.city,
     phone: body.phone || body.ownerPhone,
     rates: body.rates,
-    fee: body.fee,
-    razorpayAccountId: body.razorpayAccountId,
   });
   await User.create({ name: body.ownerName, phone: body.ownerPhone, passwordHash: await bcrypt.hash(body.ownerPassword, 10), role: 'owner', shopId: shop._id });
   res.status(201).json({ shop, qrUrl: `${config.webUrl}/s/${code}` });
@@ -78,7 +73,7 @@ adminRoutes.post('/shops', async (req, res) => {
 
 adminRoutes.patch('/shops/:id', async (req, res) => {
   const body = z
-    .object({ active: z.boolean(), fee, razorpayAccountId: z.string().trim().max(40), name: z.string().trim().min(2).max(80) })
+    .object({ active: z.boolean(), name: z.string().trim().min(2).max(80) })
     .partial()
     .parse(req.body);
   const shop = await Shop.findByIdAndUpdate(req.params.id, body, { new: true });
@@ -95,8 +90,8 @@ adminRoutes.get('/stats', async (_req, res) => {
     Device.distinct('shopId', { revoked: false, online: true, lastSeenAt: { $gte: onlineSince } }),
     Job.aggregate([
       { $match: { 'payment.paidAt': { $gte: since }, status: { $in: ['queued', 'sent', 'printing', 'printed', 'failed'] } } },
-      { $group: { _id: null, jobs: { $sum: 1 }, revenue: { $sum: '$total' }, fees: { $sum: '$platformFee' }, pages: { $sum: { $multiply: ['$file.pages', '$copies'] } } } },
+      { $group: { _id: null, jobs: { $sum: 1 }, revenue: { $sum: '$total' }, pages: { $sum: { $multiply: ['$file.pages', '$copies'] } } } },
     ]),
   ]);
-  res.json({ shops, active, online: online.length, last30: agg[0] ?? { jobs: 0, revenue: 0, fees: 0, pages: 0 } });
+  res.json({ shops, active, online: online.length, last30: agg[0] ?? { jobs: 0, revenue: 0, pages: 0 } });
 });

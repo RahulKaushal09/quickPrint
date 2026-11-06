@@ -10,7 +10,7 @@ import { BRAND } from '@seedhaprint/shared';
 import { HttpError } from '../auth';
 import { authenticate, hashToken } from '../hub';
 import { Device, Job, PairCode, Shop } from '../models';
-import { storage } from '../storage';
+import { sendPrintFile } from '../storage';
 
 export const agentRoutes = Router();
 
@@ -38,8 +38,7 @@ agentRoutes.get('/jobs/:id/file', async (req, res) => {
   const d = await device(req);
   const job = await Job.findOne({ _id: req.params.id, deviceId: d._id, status: { $in: ['sent', 'printing'] } });
   if (!job || !job.file.key) throw new HttpError(404, 'Job not available for this PC');
-  res.setHeader('Content-Type', 'application/pdf');
-  (await storage.stream(job.file.key)).pipe(res);
+  await sendPrintFile(res, job.file, job.rotation);
 });
 
 agentRoutes.get('/test-page', async (req, res) => {

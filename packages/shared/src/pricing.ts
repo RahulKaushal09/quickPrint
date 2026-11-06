@@ -8,12 +8,6 @@ export interface RateCard {
   colorEnabled: boolean;
 }
 
-export interface PlatformFee {
-  /** 'percent' value is basis points (250 = 2.5%), 'flat' value is paise per job. */
-  type: 'percent' | 'flat';
-  value: number;
-}
-
 export interface Quote {
   pages: number;
   copies: number;
@@ -40,12 +34,6 @@ export function quote(card: RateCard, mode: ColorMode, pages: number, copies: nu
   const rate = mode === 'color' ? card.colorPerPage : card.bwPerPage;
   const sheets = pages * copies;
   return { pages, copies, sheets, rate, total: Math.max(LIMITS.minTotal, sheets * rate) };
-}
-
-/** What the platform keeps from a job. Never more than the job total. */
-export function platformCut(total: number, fee: PlatformFee): number {
-  const cut = fee.type === 'percent' ? Math.round((total * fee.value) / 10_000) : fee.value;
-  return Math.min(total, Math.max(0, cut));
 }
 
 export function rupees(paise: number): string {

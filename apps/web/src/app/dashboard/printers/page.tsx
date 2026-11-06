@@ -3,7 +3,7 @@
 import { Copy, Download, FileCheck2, Monitor, Plus, Printer, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { PageHeader } from '@/components/app-shell';
-import { Badge, Button, Card, Dot, Empty, Field, Modal, Select, Skeleton, useToast } from '@/components/ui';
+import { Badge, Button, Card, Dot, Empty, Modal, Skeleton, useToast } from '@/components/ui';
 import { api } from '@/lib/api';
 import { cx, timeAgo } from '@/lib/format';
 import { useShop } from '../shop-context';
@@ -45,7 +45,8 @@ export default function PrintersPage() {
   }, [load]);
 
   const allPrinters = [...new Set((devices ?? []).flatMap((d) => d.printers.map((p) => p.name)))];
-  const dirty = routing.bw !== shop.printers.bw || routing.color !== shop.printers.color;
+  const same = (a: string[], b: string[]) => a.length === b.length && a.every((p) => b.includes(p));
+  const dirty = !same(routing.bw, shop.printers.bw) || !same(routing.color, shop.printers.color);
 
   async function saveRouting() {
     setSaving(true);
@@ -90,25 +91,11 @@ export default function PrintersPage() {
 
       {/* Routing */}
       <Card className="mb-6 p-5 sm:p-6">
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
-          <h2 className="text-lg font-bold">Which printer prints what</h2>
-          <p className="text-sm text-ink-mute">Leave on automatic to use the PC&rsquo;s default printer.</p>
-        </div>
+        <h2 className="text-lg font-bold">Which printers print what</h2>
+        <p className="mt-1 text-sm text-ink-mute">Tick one or more for each type. Jobs go to the ready printer with the least work, and skip one that is jammed or out of paper. With none ticked, the PC&rsquo;s default printer is used.</p>
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          <Field label="Black & white jobs go to">
-            <Select value={routing.bw} onChange={(e) => setRouting({ ...routing, bw: e.target.value })}>
-              <option value="">Automatic (default printer)</option>
-              {allPrinters.map((p) => <option key={p}>{p}</option>)}
-              {routing.bw && !allPrinters.includes(routing.bw) && <option value={routing.bw}>{routing.bw} (not connected)</option>}
-            </Select>
-          </Field>
-          <Field label="Colour jobs go to" hint={!shop.rates.colorEnabled ? 'Colour printing is switched off in Settings.' : undefined}>
-            <Select value={routing.color} onChange={(e) => setRouting({ ...routing, color: e.target.value })}>
-              <option value="">Automatic (default printer)</option>
-              {allPrinters.map((p) => <option key={p}>{p}</option>)}
-              {routing.color && !allPrinters.includes(routing.color) && <option value={routing.color}>{routing.color} (not connected)</option>}
-            </Select>
-          </Field>
+          <PrinterPicker title="Black & white jobs" value={routing.bw} all={allPrinters} onChange={(bw) => setRouting({ ...routing, bw })} />
+          <PrinterPicker title="Colour jobs" hint={!shop.rates.colorEnabled ? 'Colour printing is switched off in Settings.' : undefined} value={routing.color} all={allPrinters} onChange={(color) => setRouting({ ...routing, color })} />
         </div>
         {dirty && (
           <div className="mt-5 flex justify-end gap-2">
@@ -165,7 +152,7 @@ export default function PrintersPage() {
                 {d.printers.length === 0 && <li className="px-5 py-4 text-sm text-ink-mute">No printers found on this PC. Install the printer driver in Windows first.</li>}
                 {d.printers.map((p) => {
                   const s = PRINTER_STATUS[p.status] ?? PRINTER_STATUS.error!;
-                  const roles = [shop.printers.bw === p.name && 'B/W', shop.printers.color === p.name && 'Colour'].filter(Boolean);
+                  const roles = [shop.printers.bw.includes(p.name) && 'B/W', shop.printers.color.includes(p.name) && 'Colour'].filter(Boolean);
                   return (
                     <li key={p.name} className="flex items-center gap-3 px-5 py-3">
                       <Printer className="size-4.5 shrink-0 text-ink-mute" />
@@ -192,6 +179,30 @@ export default function PrintersPage() {
 
       <PairModal open={pairOpen} onClose={() => { setPairOpen(false); void load(); }} />
     </>
+  );
+}
+
+function PrinterPicker({ title, hint, value, all, onChange }: { title: string; hint?: string; value: string[]; all: string[]; onChange: (v: string[]) => void }) {
+  // A printer can be assigned while its PC is off, so it stays listed.
+  const names = [...new Set([...all, ...value])];
+  return (
+    <div className="rounded-2xl border border-line p-4">
+      <p className="text-sm font-bold">{title}</p>
+      <p className="mt-0.5 text-xs text-ink-mute">{hint ?? (value.length ? `${value.length} printer${value.length === 1 ? '' : 's'} assigned` : 'Automatic: default printer')}</p>
+      <div className="mt-3 space-y-1.5">
+        {names.length === 0 && <p className="text-sm text-ink-mute">No printers found yet. Connect a shop PC first.</p>}
+        {names.map((p) => {
+          const on = value.includes(p);
+          return (
+            <label key={p} className={cx('flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 text-sm font-semibold transition', on ? 'border-ink bg-paper' : 'border-line hover:border-line-strong')}>
+              <input type="checkbox" className="size-4 accent-[#0b1220]" checked={on} onChange={() => onChange(on ? value.filter((x) => x !== p) : [...value, p])} />
+              <span className="min-w-0 flex-1 truncate">{p}</span>
+              {!all.includes(p) && <Badge>Not connected</Badge>}
+            </label>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

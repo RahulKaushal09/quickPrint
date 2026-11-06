@@ -7,13 +7,13 @@ import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { LIMITS, quote } from '@seedhaprint/shared';
 import { HttpError } from '../auth';
-import { config, paymentsLive } from '../config';
+import { config } from '../config';
 import { acceptedTypes, makePrintReady } from '../documents';
 import { dispatchShop } from '../hub';
 import { markPaid, newJobRef, randomCode } from '../jobs';
 import { Job, Shop } from '../models';
-import { checkoutSignatureValid, confirmPayment, createOrder } from '../payments';
-import { feeFor, publicJob, publicShop } from '../presenters';
+import { checkoutSignatureValid, confirmPayment, createOrder, RazorpayError, shopKeys } from '../payments';
+import { publicJob, publicShop } from '../presenters';
 import { storage } from '../storage';
 
 export const publicRoutes = Router();
@@ -37,7 +37,6 @@ publicRoutes.get('/config', (_req, res) => {
   res.json({
     accept: acceptedTypes(),
     limits: LIMITS,
-    payments: paymentsLive ? { mode: 'razorpay', keyId: config.razorpay.keyId } : { mode: 'mock' },
   });
 });
 
@@ -73,19 +72,38 @@ publicRoutes.post('/shops/:code/uploads', uploadLimit, upload.single('file'), as
   res.status(201).json(publicJob(job));
 });
 
+/** The print-ready PDF for the customer's preview. Only until they pay; the ref is known only to them. */
+publicRoutes.get('/jobs/:ref/preview', async (req, res) => {
+  const job = await jobByRef(req.params.ref);
+  if (job.status !== 'draft' || !job.file.key) throw new HttpError(410, 'Preview is no longer available');
+  res.setHeader('Content-Type', 'application/pdf');
+  (await storage.stream(job.file.key)).pipe(res);
+});
+
 publicRoutes.get('/jobs/:ref', async (req, res) => {
   const job = await jobByRef(req.params.ref);
   const shop = await Shop.findById(job.shopId).select('name area code').lean();
   res.json(publicJob(job, shop ?? undefined));
 });
 
-/** Step 2: lock the options and open a payment order. */
+/** Step 2: lock the options and open a payment order on the shop's own Razorpay account. */
 publicRoutes.post('/jobs/:ref/checkout', async (req, res) => {
-  const body = z.object({ mode: z.enum(['bw', 'color']), copies: z.number().int().min(1).max(LIMITS.maxCopies) }).parse(req.body);
+  const body = z
+    .object({
+      mode: z.enum(['bw', 'color']),
+      copies: z.number().int().min(1).max(LIMITS.maxCopies),
+      rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]).default(0),
+    })
+    .parse(req.body);
   const job = await jobByRef(String(req.params.ref));
   if (job.status !== 'draft') throw new HttpError(409, 'This job is already paid');
   const shop = await Shop.findById(job.shopId);
   if (!shop?.active || !shop.accepting) throw new HttpError(409, 'This shop is not taking print orders right now');
+  const status = await publicShop(shop);
+  if (!status.available[body.mode]) throw new HttpError(409, `The ${body.mode === 'color' ? 'colour' : 'black & white'} printer is offline right now. Please ask at the counter.`);
+
+  const keys = await shopKeys(shop._id);
+  if (!keys && !config.allowTestCheckout) throw new HttpError(409, 'This shop has not set up online payments yet. Please ask at the counter.');
 
   let q;
   try {
@@ -93,15 +111,14 @@ publicRoutes.post('/jobs/:ref/checkout', async (req, res) => {
   } catch (e) {
     throw new HttpError(400, (e as Error).message);
   }
-  const platformFee = feeFor(q.total, shop.fee);
-  const order = await createOrder({
-    receipt: job.ref,
-    amount: q.total,
-    platformFee,
-    shopAccountId: shop.razorpayAccountId || undefined,
-    notes: { jobRef: job.ref, shop: shop.code },
-  });
-  job.set({ mode: body.mode, copies: body.copies, rate: q.rate, total: q.total, platformFee, payment: { orderId: order.id, mock: order.mock } });
+  let order;
+  try {
+    order = await createOrder(keys, { receipt: job.ref, amount: q.total, notes: { jobRef: job.ref, shop: shop.code } });
+  } catch (e) {
+    if (e instanceof RazorpayError) throw new HttpError(502, 'Payment could not be started. Please ask the shop for help.');
+    throw e;
+  }
+  job.set({ mode: body.mode, copies: body.copies, rotation: body.rotation, rate: q.rate, total: q.total, payment: { orderId: order.id, mock: order.mock } });
   await job.save();
 
   res.json({
@@ -109,7 +126,7 @@ publicRoutes.post('/jobs/:ref/checkout', async (req, res) => {
     amount: q.total,
     currency: 'INR',
     mock: order.mock,
-    keyId: config.razorpay.keyId || undefined,
+    keyId: keys?.keyId,
     shopName: shop.name,
     description: `${q.sheets} page${q.sheets > 1 ? 's' : ''} · ${body.mode === 'color' ? 'Colour' : 'B/W'}`,
   });
@@ -126,18 +143,19 @@ publicRoutes.post('/jobs/:ref/verify', async (req, res) => {
   const job = await jobByRef(String(req.params.ref));
   if (job.payment?.orderId !== body.orderId) throw new HttpError(400, 'Payment does not match this job');
   if (job.status === 'draft' || job.status === 'expired') {
-    if (!checkoutSignatureValid(body.orderId, body.paymentId, body.signature)) throw new HttpError(400, 'Payment could not be verified');
-    if (!(await confirmPayment(body.orderId, body.paymentId, job.total))) throw new HttpError(402, 'Payment is not complete yet');
+    const keys = await shopKeys(job.shopId);
+    if (!keys || !checkoutSignatureValid(keys.keySecret, body.orderId, body.paymentId, body.signature)) throw new HttpError(400, 'Payment could not be verified');
+    if (!(await confirmPayment(keys, body.orderId, body.paymentId, job.total))) throw new HttpError(402, 'Payment is not complete yet');
     await markPaid(job, body.paymentId);
   }
   res.json(publicJob((await afterPaid(job._id, job.shopId))!));
 });
 
-/** Step 3b: test checkout, only when no Razorpay keys are configured. */
+/** Step 3b: test checkout, only where ALLOW_TEST_CHECKOUT permits and the order is a mock one. */
 publicRoutes.post('/jobs/:ref/mock-pay', async (req, res) => {
-  if (paymentsLive) throw new HttpError(404, 'Not found');
+  if (!config.allowTestCheckout) throw new HttpError(404, 'Not found');
   const job = await jobByRef(String(req.params.ref));
-  if (!job.payment?.orderId) throw new HttpError(400, 'Start checkout first');
+  if (!job.payment?.orderId || !job.payment.mock) throw new HttpError(400, 'Start checkout first');
   if (job.status === 'draft' || job.status === 'expired') await markPaid(job, `mock_pay_${Date.now()}`);
   res.json(publicJob((await afterPaid(job._id, job.shopId))!));
 });

@@ -17,10 +17,9 @@ interface AdminShop {
   active: boolean;
   accepting: boolean;
   online: boolean;
-  fee: { type: 'percent' | 'flat'; value: number };
-  razorpayAccountId: string;
+  razorpay: { keyId: string };
   owner: { name: string; phone: string } | null;
-  last30: { jobs: number; revenue: number; fees: number };
+  last30: { jobs: number; revenue: number };
   qrUrl: string;
 }
 
@@ -28,10 +27,8 @@ interface Stats {
   shops: number;
   active: number;
   online: number;
-  last30: { jobs: number; revenue: number; fees: number; pages: number };
+  last30: { jobs: number; revenue: number; pages: number };
 }
-
-const feeText = (f: AdminShop['fee']) => (f.type === 'percent' ? `${f.value / 100}%` : `${rupees(f.value)}/job`);
 
 export default function AdminPage() {
   const router = useRouter();
@@ -85,7 +82,7 @@ export default function AdminPage() {
         <Kpi label="Shops" value={stats ? `${stats.active}` : null} sub={stats ? `${stats.shops - stats.active} paused` : ''} icon={<Store className="size-4" />} />
         <Kpi label="Online now" value={stats ? `${stats.online}` : null} sub="PCs connected" icon={<Wifi className="size-4" />} />
         <Kpi label="Jobs, 30 days" value={stats ? stats.last30.jobs.toLocaleString('en-IN') : null} sub={stats ? `${stats.last30.pages.toLocaleString('en-IN')} pages` : ''} icon={<QrCode className="size-4" />} />
-        <Kpi label="Platform fees, 30 days" value={stats ? rupees(stats.last30.fees) : null} sub={stats ? `of ${rupees(stats.last30.revenue)} processed` : ''} icon={<IndianRupee className="size-4" />} />
+        <Kpi label="Paid by customers, 30 days" value={stats ? rupees(stats.last30.revenue) : null} sub="Into the shops' own accounts" icon={<IndianRupee className="size-4" />} />
       </div>
 
       <Card className="mt-6 overflow-hidden">
@@ -109,8 +106,8 @@ export default function AdminPage() {
                   <th className="px-3 py-3">Owner</th>
                   <th className="px-3 py-3">PC</th>
                   <th className="px-3 py-3 text-right">Jobs 30d</th>
-                  <th className="px-3 py-3 text-right">Fees 30d</th>
-                  <th className="px-3 py-3">Fee</th>
+                  <th className="px-3 py-3 text-right">Paid 30d</th>
+                  <th className="px-3 py-3">Razorpay</th>
                   <th className="px-3 py-3">Active</th>
                   <th className="px-5 py-3" />
                 </tr>
@@ -136,10 +133,9 @@ export default function AdminPage() {
                       </span>
                     </td>
                     <td className="px-3 py-3 text-right font-mono tabular">{s.last30.jobs}</td>
-                    <td className="px-3 py-3 text-right font-mono tabular">{rupees(s.last30.fees)}</td>
+                    <td className="px-3 py-3 text-right font-mono tabular">{rupees(s.last30.revenue)}</td>
                     <td className="px-3 py-3">
-                      <Badge>{feeText(s.fee)}</Badge>
-                      {s.razorpayAccountId && <Badge tone="cyan" className="ml-1">Route</Badge>}
+                      {s.razorpay?.keyId ? <Badge tone={s.razorpay.keyId.startsWith('rzp_live_') ? 'ok' : 'warn'}>{s.razorpay.keyId.startsWith('rzp_live_') ? 'Live' : 'Test'}</Badge> : <Badge>Not connected</Badge>}
                     </td>
                     <td className="px-3 py-3">
                       <Badge tone={s.active ? 'ok' : 'neutral'}>{s.active ? (s.accepting ? 'Live' : 'Paused by shop') : 'Disabled'}</Badge>
@@ -176,31 +172,10 @@ function Kpi({ label, value, sub, icon }: { label: string; value: string | null;
   );
 }
 
-function FeeFields({ fee, onChange }: { fee: { type: 'percent' | 'flat'; value: string }; onChange: (f: { type: 'percent' | 'flat'; value: string }) => void }) {
-  return (
-    <div className="grid grid-cols-2 gap-3">
-      <Field label="Platform fee">
-        <Select value={fee.type} onChange={(e) => onChange({ ...fee, type: e.target.value as 'percent' | 'flat' })}>
-          <option value="percent">% of each job</option>
-          <option value="flat">₹ per job</option>
-        </Select>
-      </Field>
-      <Field label={fee.type === 'percent' ? 'Percent' : 'Rupees'}>
-        <Input inputMode="decimal" prefix={fee.type === 'flat' ? '₹' : undefined} value={fee.value} onChange={(e) => onChange({ ...fee, value: e.target.value })} />
-      </Field>
-    </div>
-  );
-}
-
-// Percent is stored in basis points, flat fees in paise.
-const feeToApi = (f: { type: 'percent' | 'flat'; value: string }) => ({ type: f.type, value: Math.round(parseFloat(f.value || '0') * 100) });
-const feeFromApi = (f: AdminShop['fee']) => ({ type: f.type, value: String(f.value / 100) });
-
 function CreateShop({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: () => void }) {
   const toast = useToast();
-  const blank = { name: '', area: '', city: '', ownerName: '', ownerPhone: '', ownerPassword: '', bw: '2', color: '10', razorpayAccountId: '' };
+  const blank = { name: '', area: '', city: '', ownerName: '', ownerPhone: '', ownerPassword: '', bw: '2', color: '10' };
   const [f, setF] = useState(blank);
-  const [fee, setFee] = useState<{ type: 'percent' | 'flat'; value: string }>({ type: 'percent', value: '5' });
   const [busy, setBusy] = useState(false);
   const [created, setCreated] = useState<{ name: string; qrUrl: string } | null>(null);
   const set = (k: keyof typeof blank) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: e.target.value });
@@ -219,8 +194,6 @@ function CreateShop({ open, onClose, onCreated }: { open: boolean; onClose: () =
           ownerPhone: f.ownerPhone,
           ownerPassword: f.ownerPassword,
           rates: { bwPerPage: Math.round(parseFloat(f.bw) * 100), colorPerPage: Math.round(parseFloat(f.color) * 100), colorEnabled: true },
-          fee: feeToApi(fee),
-          razorpayAccountId: f.razorpayAccountId,
         },
       });
       setCreated({ name: r.shop.name, qrUrl: r.qrUrl });
@@ -243,7 +216,7 @@ function CreateShop({ open, onClose, onCreated }: { open: boolean; onClose: () =
       {created ? (
         <div className="text-center">
           <p className="text-lg font-bold">{created.name} is live</p>
-          <p className="mt-1 text-sm text-ink-mute">Share the owner login. Their QR link is:</p>
+          <p className="mt-1 text-sm text-ink-mute">Share the owner login. They connect their own Razorpay under Payments. Their QR link is:</p>
           <code className="mt-4 block rounded-xl bg-paper px-4 py-3 font-mono text-sm">{created.qrUrl}</code>
           <Button className="mt-6 w-full" onClick={close}>
             Done
@@ -281,12 +254,6 @@ function CreateShop({ open, onClose, onCreated }: { open: boolean; onClose: () =
               <Input prefix="₹" inputMode="decimal" value={f.color} onChange={set('color')} required />
             </Field>
           </div>
-          <div className="space-y-4 border-t border-line pt-5">
-            <FeeFields fee={fee} onChange={setFee} />
-            <Field label="Razorpay Route account (optional)" hint="acc_... from Razorpay Route. When set, the shop's share settles straight to the shop.">
-              <Input value={f.razorpayAccountId} onChange={set('razorpayAccountId')} placeholder="acc_XXXXXXXXXXXXXX" />
-            </Field>
-          </div>
           <Button type="submit" size="lg" className="w-full" loading={busy}>
             Create shop
           </Button>
@@ -299,14 +266,12 @@ function CreateShop({ open, onClose, onCreated }: { open: boolean; onClose: () =
 function EditShop({ shop, onClose, onSaved }: { shop: AdminShop; onClose: () => void; onSaved: () => void }) {
   const toast = useToast();
   const [active, setActive] = useState(shop.active);
-  const [fee, setFee] = useState(feeFromApi(shop.fee));
-  const [account, setAccount] = useState(shop.razorpayAccountId);
   const [busy, setBusy] = useState(false);
 
   async function save() {
     setBusy(true);
     try {
-      await api(`/api/admin/shops/${shop.id}`, { method: 'PATCH', json: { active, fee: feeToApi(fee), razorpayAccountId: account } });
+      await api(`/api/admin/shops/${shop.id}`, { method: 'PATCH', json: { active } });
       toast('Shop updated');
       onSaved();
       onClose();
@@ -327,10 +292,6 @@ function EditShop({ shop, onClose, onSaved }: { shop: AdminShop; onClose: () => 
           </div>
           <Switch checked={active} onChange={setActive} label="Shop enabled" />
         </div>
-        <FeeFields fee={fee} onChange={setFee} />
-        <Field label="Razorpay Route account">
-          <Input value={account} onChange={(e) => setAccount(e.target.value)} placeholder="acc_XXXXXXXXXXXXXX" />
-        </Field>
         <a href={shop.qrUrl} target="_blank" rel="noreferrer" className="block truncate font-mono text-xs text-ink-mute hover:text-ink">
           {shop.qrUrl}
         </a>

@@ -5,7 +5,7 @@ QR self-service printing for small print shops. A customer scans the shop's QR, 
 ```
 Customer phone ──▶ Web (Next.js) ──▶ API (Express + MongoDB) ◀══ WebSocket ══▶ Shop PC agent ──▶ Printer
                                          │
-                                         └── Razorpay (orders, webhook, Route split, refunds)
+                                         └── Each shop's own Razorpay (orders, webhook, refunds)
 ```
 
 ## What's inside
@@ -22,8 +22,8 @@ SeedhaPrint/
 |---|---|---|
 | Customer | `/s/<CODE>` (the QR) | Upload, choose B/W or colour and copies, pay |
 | Customer | `/j/<ref>` | Live status + pickup code |
-| Shop owner | `/dashboard` | Today's earnings, jobs, printers, pairing, QR poster, prices, pause orders |
-| Platform admin | `/admin` | Add shops (gets QR + owner login), platform fee, Razorpay Route account, enable or disable, "view as shop" |
+| Shop owner | `/dashboard` | Today's earnings, jobs, printers per print type, own Razorpay, pairing, QR poster, prices, pause orders |
+| Platform admin | `/admin` | Add shops (gets QR + owner login), see who has connected Razorpay, enable or disable, "view as shop" |
 
 ## Run it locally
 
@@ -74,20 +74,18 @@ What the agent does: pairs once with an 8-character code (one-time, 30-minute ex
 - **Files are deleted** 24 h after printing (configurable) and at once for unpaid drafts. Job records stay for accounting.
 - Load is small: 1,000 shops × 200 jobs/day is about 2 to 3 jobs per second.
 
-## Payments (Razorpay)
+## Payments (each shop's own Razorpay)
 
-Leave the keys empty for test checkout. For real payments set in `apps/api/.env`:
+Every shop connects its own Razorpay account, so customers pay the shop directly and SeedhaPrint never holds money. This also means SeedhaPrint can't take a cut of each job: charge shops a subscription.
 
-```
-RAZORPAY_KEY_ID=rzp_live_...
-RAZORPAY_KEY_SECRET=...
-RAZORPAY_WEBHOOK_SECRET=...
-```
+1. Set `ENCRYPTION_KEY` in `apps/api/.env` once (`openssl rand -hex 32`). It encrypts shop secrets; if it changes, every shop must reconnect.
+2. The shop opens **Dashboard → Payments** and pastes the Key ID and Key Secret from Razorpay (**Account & Settings → API Keys**). They are checked against Razorpay before saving.
+3. The same page shows the shop's webhook URL and secret to add in Razorpay, with the events `payment.captured` and `order.paid`. The webhook marks a job paid even if the customer closes the browser.
 
-- Add a webhook in Razorpay → `https://api.seedhaprint.in/api/payments/webhook`, events `payment.captured` and `order.paid`. The webhook marks a job paid even if the customer closes the browser.
-- **Route (recommended):** create a linked account for each shop in Razorpay Route and paste its `acc_...` in the admin panel. The order then carries a transfer, so the shop's share settles straight to the shop and the platform keeps its fee. Without it, everything settles to your account.
-- Refunds from the dashboard call Razorpay; with Route they also reverse the shop's transfer.
-- A job is only printed after the server confirms the payment with Razorpay (signature + amount + order).
+- A job only prints after the server confirms the payment with the shop's account (signature + amount + order).
+- Refunds from the dashboard use the shop's keys.
+- Without keys, a shop's customers can't pay. `ALLOW_TEST_CHECKOUT=true` turns on a fake checkout for testing, and it prints for free, so keep it off in production. Razorpay test keys are the safer way to test a shop.
+- A later upgrade: Razorpay's Technology Partner OAuth gives a one-click "Connect Razorpay", once Razorpay approves the platform as a partner.
 
 ## Deploying
 
@@ -99,12 +97,12 @@ RAZORPAY_WEBHOOK_SECRET=...
 
 ## Not done yet
 
-- Real Razorpay keys, the Razorpay Route linked accounts and the webhook (test checkout works end to end).
+- A real Razorpay account connected and paid through. The flow is tested against a stand-in for Razorpay's API.
 - Hosting, and buying seedhaprint.in.
 - Terms, Privacy, Refund and Contact pages, which Razorpay asks for before activating an account.
 - The installer is unsigned, so Windows SmartScreen will warn ("More info → Run anyway") until you buy a code-signing certificate.
 - Real printing on Windows 7 and Windows 10 hardware is untested. Everything up to SumatraPDF is tested (printer listing compiles against the Windows API, command lines are unit-tested, full flow runs with simulated printers).
-- Duplex, page ranges and paper sizes other than A4 are deliberately left out to keep the customer flow to two choices.
+- Duplex, page ranges, per-page rotation and paper sizes other than A4 are deliberately left out to keep the customer flow simple.
 - Password reset is manual (admin).
 
 ## Tests

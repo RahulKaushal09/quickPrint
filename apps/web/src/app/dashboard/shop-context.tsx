@@ -12,8 +12,8 @@ export interface ShopData {
   active: boolean;
   accepting: boolean;
   rates: { bwPerPage: number; colorPerPage: number; colorEnabled: boolean };
-  printers: { bw: string; color: string };
-  fee: { type: 'percent' | 'flat'; value: number };
+  printers: { bw: string[]; color: string[] };
+  razorpay: { keyId: string };
 }
 
 export interface ShopCtx {

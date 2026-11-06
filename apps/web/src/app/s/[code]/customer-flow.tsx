@@ -7,6 +7,7 @@ import { quote, type ColorMode } from '@seedhaprint/shared';
 import { Button, Card, Dot, Mark, Skeleton, Stepper } from '@/components/ui';
 import { api, ApiError, uploadFile } from '@/lib/api';
 import { bytes, cx, initials, plural, rupees } from '@/lib/format';
+import { DocumentPreview, type Rotation } from './document-preview';
 import { MockCheckout } from './mock-checkout';
 
 interface Shop {
@@ -18,6 +19,8 @@ interface Shop {
   rates: { bwPerPage: number; colorPerPage: number; colorEnabled: boolean };
   open: boolean;
   online: boolean;
+  available: { bw: boolean; color: boolean };
+  payments: 'razorpay' | 'test' | 'none';
 }
 
 interface Draft {
@@ -28,7 +31,6 @@ interface Draft {
 interface PublicConfig {
   accept: string[];
   limits: { maxFileBytes: number; maxCopies: number };
-  payments: { mode: 'mock' } | { mode: 'razorpay'; keyId: string };
 }
 
 interface Order {
@@ -71,6 +73,7 @@ export function CustomerFlow({ code }: { code: string }) {
 
   const [mode, setMode] = useState<ColorMode>('bw');
   const [copies, setCopies] = useState(1);
+  const [rotation, setRotation] = useState<Rotation>(0);
   const [paying, setPaying] = useState(false);
   const [payError, setPayError] = useState('');
   const [mockOrder, setMockOrder] = useState<Order | null>(null);
@@ -114,6 +117,7 @@ export function CustomerFlow({ code }: { code: string }) {
       });
       setDraft(d);
       setCopies(1);
+      setRotation(0);
     } catch (e) {
       setFile(null);
       setUploadError((e as Error).message);
@@ -131,7 +135,16 @@ export function CustomerFlow({ code }: { code: string }) {
     if (cameraRef.current) cameraRef.current.value = '';
   }
 
-  const canPay = Boolean(shop?.open && shop.online && draft);
+  // A print type whose printers are all offline can't be chosen; move off it if that happens mid-order.
+  const canPrint = (m: ColorMode) => Boolean(shop?.available[m] && (m === 'bw' || shop.rates.colorEnabled));
+  useEffect(() => {
+    if (shop && !canPrint(mode)) {
+      const other: ColorMode = mode === 'bw' ? 'color' : 'bw';
+      if (canPrint(other)) setMode(other);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shop, mode]);
+  const canPay = Boolean(shop?.open && shop.online && draft && shop.payments !== 'none' && canPrint(mode));
   const q = draft && shop ? quote(shop.rates, mode, draft.file.pages, copies) : null;
 
   async function pay() {
@@ -139,7 +152,7 @@ export function CustomerFlow({ code }: { code: string }) {
     setPaying(true);
     setPayError('');
     try {
-      const order = await api<Order>(`/api/public/jobs/${draft.ref}/checkout`, { method: 'POST', json: { mode, copies } });
+      const order = await api<Order>(`/api/public/jobs/${draft.ref}/checkout`, { method: 'POST', json: { mode, copies, rotation } });
       if (order.mock) {
         setMockOrder(order);
         setPaying(false);
@@ -209,7 +222,7 @@ export function CustomerFlow({ code }: { code: string }) {
     );
   }
 
-  const unavailable = !shop.open ? 'closed' : !shop.online ? 'offline' : null;
+  const unavailable = !shop.open ? 'closed' : !shop.online ? 'offline' : shop.payments === 'none' ? 'nopay' : null;
   const accept = cfg.accept.join(',') + ',image/*';
 
   return (
@@ -228,7 +241,7 @@ export function CustomerFlow({ code }: { code: string }) {
         </div>
         <span className={cx('inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold', unavailable ? 'bg-paper-2 text-ink-mute' : 'bg-ok-soft text-ok')}>
           <Dot on={!unavailable} pulse />
-          {unavailable ? 'Offline' : 'Ready'}
+          {unavailable ? 'Not available' : 'Ready'}
         </span>
       </header>
 
@@ -236,8 +249,8 @@ export function CustomerFlow({ code }: { code: string }) {
         <Card className="mt-5 flex animate-rise gap-3 border-warn/20 bg-warn-soft p-4">
           <WifiOff className="mt-0.5 size-5 shrink-0 text-warn" />
           <div className="text-sm">
-            <p className="font-bold text-warn">{unavailable === 'closed' ? 'Not taking orders right now' : "The shop's printer is offline"}</p>
-            <p className="mt-0.5 text-ink-soft">You can still upload and check the price. Payment opens as soon as the printer is back. Please ask at the counter.</p>
+            <p className="font-bold text-warn">{unavailable === 'closed' ? 'Not taking orders right now' : unavailable === 'nopay' ? 'Online payment is not set up yet' : "The shop's printer is offline"}</p>
+            <p className="mt-0.5 text-ink-soft">{unavailable === 'nopay' ? 'This shop can’t take online payments yet. Please ask at the counter.' : 'You can still upload and check the price. Payment opens as soon as the printer is back. Please ask at the counter.'}</p>
           </div>
         </Card>
       )}
@@ -269,7 +282,10 @@ export function CustomerFlow({ code }: { code: string }) {
             </button>
           </>
         ) : (
-          <FileCard file={file} draft={draft} progress={progress} processing={processing} onRemove={reset} />
+          <>
+            <FileCard file={file} draft={draft} progress={progress} processing={processing} onRemove={reset} />
+            {draft && <DocumentPreview key={draft.ref} jobRef={draft.ref} pages={draft.file.pages} rotation={rotation} onRotate={setRotation} />}
+          </>
         )}
 
         {uploadError && <p className="mt-3 rounded-xl bg-bad-soft px-4 py-3 text-sm font-medium text-bad">{uploadError}</p>}
@@ -284,14 +300,15 @@ export function CustomerFlow({ code }: { code: string }) {
         </StepTitle>
 
         <div className="mt-3 grid grid-cols-2 gap-3" role="radiogroup" aria-label="Colour">
-          <ModeCard active={mode === 'bw'} onClick={() => setMode('bw')} title="Black & white" price={shop.rates.bwPerPage} swatch="bw" />
+          <ModeCard active={mode === 'bw'} onClick={() => canPrint('bw') && setMode('bw')} title="Black & white" price={shop.rates.bwPerPage} swatch="bw" disabled={shop.online && !shop.available.bw} disabledText="Printer offline" />
           <ModeCard
             active={mode === 'color'}
-            onClick={() => shop.rates.colorEnabled && setMode('color')}
+            onClick={() => canPrint('color') && setMode('color')}
             title="Colour"
             price={shop.rates.colorPerPage}
             swatch="color"
-            disabled={!shop.rates.colorEnabled}
+            disabled={!shop.rates.colorEnabled || (shop.online && !shop.available.color)}
+            disabledText={shop.rates.colorEnabled ? 'Printer offline' : 'Not available'}
           />
         </div>
 
@@ -325,7 +342,7 @@ export function CustomerFlow({ code }: { code: string }) {
 
       <div className="mt-6 flex items-center justify-center gap-4 text-xs text-ink-mute">
         <span className="flex items-center gap-1">
-          <Lock className="size-3.5" /> Secure UPI &amp; card payment
+          <Lock className="size-3.5" /> Secure online payment
         </span>
         <span className="flex items-center gap-1">
           <ShieldCheck className="size-3.5" /> File deleted after printing
@@ -341,7 +358,7 @@ export function CustomerFlow({ code }: { code: string }) {
             {!draft ? (
               'Choose a file to continue'
             ) : unavailable ? (
-              'Printer offline, payment paused'
+              unavailable === 'nopay' ? 'Online payment not available' : 'Printer offline, payment paused'
             ) : (
               <>
                 Pay {q ? rupees(q.total) : ''} &amp; print <ArrowRight className="size-5" />
@@ -427,7 +444,7 @@ function FileCard({ file, draft, progress, processing, onRemove }: { file: File;
   );
 }
 
-function ModeCard({ active, onClick, title, price, swatch, disabled }: { active: boolean; onClick: () => void; title: string; price: number; swatch: 'bw' | 'color'; disabled?: boolean }) {
+function ModeCard({ active, onClick, title, price, swatch, disabled, disabledText }: { active: boolean; onClick: () => void; title: string; price: number; swatch: 'bw' | 'color'; disabled?: boolean; disabledText?: string }) {
   return (
     <button
       role="radio"
@@ -450,7 +467,7 @@ function ModeCard({ active, onClick, title, price, swatch, disabled }: { active:
         </span>
       </div>
       <p className="mt-3.5 font-bold leading-tight">{title}</p>
-      <p className="mt-0.5 text-sm text-ink-mute">{disabled ? 'Not available' : <><span className="font-mono font-semibold text-ink">{rupees(price)}</span> / page</>}</p>
+      <p className="mt-0.5 text-sm text-ink-mute">{disabled ? disabledText : <><span className="font-mono font-semibold text-ink">{rupees(price)}</span> / page</>}</p>
     </button>
   );
 }

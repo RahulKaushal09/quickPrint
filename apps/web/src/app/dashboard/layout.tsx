@@ -1,6 +1,6 @@
 'use client';
 
-import { LayoutGrid, ListChecks, Printer, QrCode, Settings } from 'lucide-react';
+import { CreditCard, LayoutGrid, ListChecks, Printer, QrCode, Settings } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { AppShell } from '@/components/app-shell';
@@ -12,7 +12,8 @@ const NAV = [
   { href: '/dashboard', label: 'Overview', icon: LayoutGrid },
   { href: '/dashboard/jobs', label: 'Jobs', icon: ListChecks },
   { href: '/dashboard/printers', label: 'Printers', icon: Printer },
-  { href: '/dashboard/qr', label: 'QR poster', icon: QrCode },
+  { href: '/dashboard/payments', label: 'Payments', icon: CreditCard },
+  { href: '/dashboard/qr', label: 'QR', icon: QrCode },
   { href: '/dashboard/settings', label: 'Settings', icon: Settings },
 ];
 

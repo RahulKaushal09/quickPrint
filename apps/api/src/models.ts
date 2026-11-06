@@ -13,12 +13,16 @@ const ratesSchema = new Schema(
   },
   sub,
 );
-const printersSchema = new Schema({ bw: { type: String, default: '' }, color: { type: String, default: '' } }, sub);
-const feeSchema = new Schema(
+/** Printers allowed for each print type, so a shop can spread work and survive one going down. Empty = the PC's default printer. */
+const printersSchema = new Schema({ bw: { type: [String], default: [] }, color: { type: [String], default: [] } }, sub);
+/** The shop's own Razorpay account. Secrets are encrypted (see secrets.ts) and never loaded unless asked for. */
+const razorpaySchema = new Schema(
   {
-    /** 'percent' value is basis points (250 = 2.5%), 'flat' is paise per job. */
-    type: { type: String, enum: ['percent', 'flat'], required: true, default: 'percent' },
-    value: { type: Number, required: true, default: 0 },
+    keyId: { type: String, default: '' },
+    keySecret: { type: String, default: '', select: false },
+    webhookSecret: { type: String, default: '', select: false },
+    verifiedAt: Date,
+    webhookSeenAt: Date,
   },
   sub,
 );
@@ -33,11 +37,8 @@ const shopSchema = new Schema(
     active: { type: Boolean, default: true }, // admin switch (e.g. subscription lapsed)
     accepting: { type: Boolean, default: true }, // shop owner's pause button
     rates: { type: ratesSchema, default: () => ({}) },
-    /** Which printer each mode goes to. Empty = the PC's default printer. */
     printers: { type: printersSchema, default: () => ({}) },
-    fee: { type: feeSchema, default: () => ({}) },
-    /** Razorpay Route linked account (acc_...). Empty = money settles to the platform account. */
-    razorpayAccountId: { type: String, default: '' },
+    razorpay: { type: razorpaySchema, default: () => ({}) },
   },
   { timestamps: true },
 );
@@ -111,9 +112,10 @@ const jobSchema = new Schema(
     file: { type: fileSchema, required: true },
     mode: { type: String, enum: ['bw', 'color'], required: true },
     copies: { type: Number, required: true },
+    /** Clockwise turn the customer chose for the whole document. Applied when the file is served for printing. */
+    rotation: { type: Number, enum: [0, 90, 180, 270], default: 0 },
     rate: { type: Number, required: true },
     total: { type: Number, required: true },
-    platformFee: { type: Number, default: 0 },
     payment: {
       orderId: { type: String, index: true },
       paymentId: String,

@@ -1,5 +1,6 @@
 // Shop owner dashboard. Every query is scoped to req.shopId.
 
+import crypto from 'node:crypto';
 import { Router } from 'express';
 import mongoose from 'mongoose';
 import { z } from 'zod';
@@ -9,8 +10,10 @@ import { config } from '../config';
 import { connectedHere, dispatchShop, ONLINE_WINDOW_MS, sendTestPage } from '../hub';
 import { randomCode, refundJob, transition } from '../jobs';
 import { Device, Job, PairCode, Shop, User } from '../models';
+import { RazorpayError, verifyKeys } from '../payments';
 import { shopJob } from '../presenters';
-import { storage } from '../storage';
+import { decrypt, encrypt } from '../secrets';
+import { sendPrintFile } from '../storage';
 
 export const shopRoutes = Router();
 shopRoutes.use(requireUser, requireShop);
@@ -49,7 +52,7 @@ shopRoutes.patch('/', async (req, res) => {
       phone: z.string().trim().max(20),
       accepting: z.boolean(),
       rates: z.object({ bwPerPage: paise.min(50), colorPerPage: paise.min(50), colorEnabled: z.boolean() }),
-      printers: z.object({ bw: z.string().max(200), color: z.string().max(200) }),
+      printers: z.object({ bw: z.array(z.string().max(200)).max(20), color: z.array(z.string().max(200)).max(20) }),
     })
     .partial()
     .parse(req.body);
@@ -72,7 +75,6 @@ shopRoutes.get('/overview', async (req, res) => {
           jobs: { $sum: 1 },
           pages: { $sum: { $multiply: ['$file.pages', '$copies'] } },
           revenue: { $sum: { $cond: [{ $eq: ['$status', 'refunded'] }, 0, '$total'] } },
-          fees: { $sum: { $cond: [{ $eq: ['$status', 'refunded'] }, 0, '$platformFee'] } },
           failed: { $sum: { $cond: [{ $in: ['$status', ['failed']] }, 1, 0] } },
         },
       },
@@ -80,8 +82,8 @@ shopRoutes.get('/overview', async (req, res) => {
     Job.countDocuments({ shopId, status: { $in: ['queued', 'sent', 'printing'] } }),
     Device.find({ shopId, revoked: false }).lean(),
   ]);
-  const t = today[0] ?? { jobs: 0, pages: 0, revenue: 0, fees: 0, failed: 0 };
-  res.json({ today: { jobs: t.jobs, pages: t.pages, revenue: t.revenue, earnings: t.revenue - t.fees, failed: t.failed }, open, devices: devices.map(devicePublic) });
+  const t = today[0] ?? { jobs: 0, pages: 0, revenue: 0, failed: 0 };
+  res.json({ today: { jobs: t.jobs, pages: t.pages, revenue: t.revenue, failed: t.failed }, open, devices: devices.map(devicePublic) });
 });
 
 shopRoutes.get('/jobs', async (req, res) => {
@@ -123,8 +125,7 @@ shopRoutes.post('/jobs/:id/retry', async (req, res) => {
 
 shopRoutes.post('/jobs/:id/refund', async (req, res) => {
   const job = await myJob(req.shopId!, String(req.params.id));
-  const shop = await myShop(req.shopId!);
-  const next = await refundJob(job, 'Refunded by shop', Boolean(shop.razorpayAccountId));
+  const next = await refundJob(job, 'Refunded by shop');
   if (!next) throw new HttpError(409, 'Mark the job as failed before refunding');
   res.json({ job: shopJob(next) });
 });
@@ -132,9 +133,60 @@ shopRoutes.post('/jobs/:id/refund', async (req, res) => {
 shopRoutes.get('/jobs/:id/file', async (req, res) => {
   const job = await myJob(req.shopId!, String(req.params.id));
   if (!job.file.key) throw new HttpError(410, 'The file was already deleted');
-  res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(job.file.name)}.pdf"`);
-  (await storage.stream(job.file.key)).pipe(res);
+  await sendPrintFile(res, job.file, job.rotation);
+});
+
+// ---------------------------------------------------------------- the shop's own Razorpay
+
+async function paymentsView(shopId: string) {
+  const shop = await Shop.findById(shopId).select('+razorpay.webhookSecret');
+  if (!shop) throw new HttpError(404, 'Shop not found');
+  const r = shop.razorpay;
+  return {
+    connected: Boolean(r.keyId),
+    keyId: r.keyId,
+    mode: r.keyId.startsWith('rzp_live_') ? 'live' : r.keyId ? 'test' : null,
+    verifiedAt: r.verifiedAt,
+    webhookUrl: `${config.apiUrl}/api/payments/webhook/${shop.code}`,
+    webhookSecret: r.webhookSecret ? decrypt(r.webhookSecret) : '',
+    webhookSeenAt: r.webhookSeenAt,
+  };
+}
+
+shopRoutes.get('/payments', async (req, res) => {
+  res.json(await paymentsView(req.shopId!));
+});
+
+shopRoutes.put('/payments', async (req, res) => {
+  const body = z
+    .object({
+      keyId: z.string().trim().regex(/^rzp_(test|live)_[A-Za-z0-9]+$/, 'A Key ID starts with rzp_live_ or rzp_test_'),
+      keySecret: z.string().trim().min(8, 'Paste the full Key Secret').max(200),
+    })
+    .parse(req.body);
+  try {
+    await verifyKeys(body);
+  } catch (e) {
+    if (e instanceof RazorpayError && e.status === 401) throw new HttpError(400, 'Razorpay did not accept these keys. Check the Key ID and Key Secret and try again.');
+    throw new HttpError(502, 'Could not reach Razorpay to check these keys. Please try again.');
+  }
+  const shop = await Shop.findById(req.shopId).select('+razorpay.webhookSecret');
+  if (!shop) throw new HttpError(404, 'Shop not found');
+  shop.set({
+    'razorpay.keyId': body.keyId,
+    'razorpay.keySecret': encrypt(body.keySecret),
+    'razorpay.verifiedAt': new Date(),
+    // Kept when keys change, so the webhook set up in Razorpay keeps working.
+    'razorpay.webhookSecret': shop.razorpay.webhookSecret || encrypt(crypto.randomBytes(24).toString('base64url')),
+  });
+  await shop.save();
+  res.json(await paymentsView(req.shopId!));
+});
+
+shopRoutes.delete('/payments', async (req, res) => {
+  await Shop.updateOne({ _id: req.shopId }, { $set: { razorpay: {} } });
+  res.json(await paymentsView(req.shopId!));
 });
 
 // ---------------------------------------------------------------- shop PCs

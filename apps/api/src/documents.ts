@@ -7,7 +7,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { PDFDocument } from 'pdf-lib';
+import { degrees, PDFDocument } from 'pdf-lib';
 import sharp from 'sharp';
 import { LIMITS } from '@seedhaprint/shared';
 import { config } from './config';
@@ -93,6 +93,13 @@ async function officeToPdf(buf: Buffer, name: string): Promise<Buffer> {
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
+}
+
+/** Turn every page clockwise. Most jobs have no rotation and skip this. */
+export async function rotatePdf(pdf: Buffer, by: number): Promise<Buffer> {
+  const doc = await PDFDocument.load(pdf, { updateMetadata: false });
+  for (const page of doc.getPages()) page.setRotation(degrees((page.getRotation().angle + by) % 360));
+  return Buffer.from(await doc.save());
 }
 
 export async function makePrintReady(buf: Buffer, name: string): Promise<PrintReady> {

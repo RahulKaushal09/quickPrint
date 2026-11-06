@@ -33,6 +33,7 @@ const FAQS = [
   ['What if the paper jams or a print comes out bad?', 'Every job has a pickup code and shows on your dashboard. Report the problem, then print it again or refund the customer.'],
   ['What happens if my internet or PC goes off?', 'New customers see that the printer is offline and payment pauses, so nobody pays for a print that cannot come out. Jobs already paid wait safely and print when your PC is back.'],
   ['Are customer documents safe?', 'Each file goes only to your shop, and files are deleted automatically after printing. Uploads that are never paid for are removed too.'],
+  ['Where does the money go?', 'Straight to you. You connect your own Razorpay account, customers pay into it, and Razorpay settles to your bank. SeedhaPrint never holds your money.'],
   ['How much does it cost?', 'Send us a message on WhatsApp with your city and what you print. We will explain the plan for your shop.'],
 ];
 
@@ -277,7 +278,7 @@ export default async function Home() {
               <ul className="mt-9 grid gap-5 sm:grid-cols-2">
                 {[
                   { icon: Wallet, t: 'Your prices, your earnings', d: 'Set your own rate per page. See today’s money at a glance.' },
-                  { icon: Layers, t: 'B/W and colour routing', d: 'Each kind of job goes to the right printer by itself.' },
+                  { icon: Layers, t: 'B/W and colour routing', d: 'Assign one or more printers to each type. Jobs find the free one.' },
                   { icon: RotateCcw, t: 'Reprint or refund', d: 'Paper jam? Print it again, or give the money back.' },
                   { icon: PauseCircle, t: 'Pause any time', d: 'One switch stops new orders when you are closing up.' },
                 ].map(({ icon: Icon, t, d }) => (
@@ -357,7 +358,7 @@ export default async function Home() {
           <ol className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {[
               ['Message us', 'Tell us your shop name and city on WhatsApp.'],
-              ['We add your shop', 'You get your own login and your shop’s QR code.'],
+              ['We add your shop', 'You get your login and QR code, and connect your Razorpay.'],
               ['Install on your PC', 'Run the small installer and type your pairing code.'],
               ['Put up your poster', 'Print it from your dashboard and stick it at the counter.'],
             ].map(([t, d], i) => (

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { canMove, platformCut, quote, rupees } from '../src/index';
+import { canMove, quote, rupees } from '../src/index';
 
 const card = { bwPerPage: 200, colorPerPage: 1000, colorEnabled: true };
 
@@ -14,12 +14,6 @@ test('quote enforces the ₹1 minimum and the limits', () => {
   assert.throws(() => quote(card, 'bw', 0, 1));
   assert.throws(() => quote(card, 'bw', 1, 51));
   assert.throws(() => quote({ ...card, colorEnabled: false }, 'color', 1, 1), /colour/);
-});
-
-test('platform cut is clamped to the job total', () => {
-  assert.equal(platformCut(10_000, { type: 'percent', value: 250 }), 250);
-  assert.equal(platformCut(10_000, { type: 'flat', value: 300 }), 300);
-  assert.equal(platformCut(100, { type: 'flat', value: 300 }), 100);
 });
 
 test('job transitions only move forward', () => {

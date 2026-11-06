@@ -1,15 +1,23 @@
 import http from 'node:http';
 import mongoose from 'mongoose';
 import { WebSocketServer } from 'ws';
-import { config, paymentsLive } from './config';
+import { config } from './config';
 import { createApp } from './app';
 import { attach, authenticate } from './hub';
 import { transition } from './jobs';
-import { Job } from './models';
+import { Job, Shop } from './models';
 import { storage } from './storage';
 
 await mongoose.connect(config.mongoUri);
 await Promise.all(mongoose.modelNames().map((n) => mongoose.model(n).syncIndexes()));
+
+// Shops saved before printers became lists hold a single name. Safe to run on every start.
+for (const f of ['bw', 'color']) {
+  const path = `printers.${f}`;
+  await Shop.collection.updateMany({ $expr: { $eq: [{ $type: `$${path}` }, 'string'] } }, [
+    { $set: { [path]: { $cond: [{ $eq: [`$${path}`, ''] }, [], [`$${path}`]] } } },
+  ]);
+}
 
 const server = http.createServer(createApp());
 const wss = new WebSocketServer({ noServer: true, maxPayload: 256 * 1024 });
@@ -47,7 +55,7 @@ setInterval(() => void cleanup().catch((e) => console.error('[cleanup]', e)), 5 
 void cleanup();
 
 server.listen(config.port, () => {
-  console.log(`SeedhaPrint API on :${config.port} (payments: ${paymentsLive ? 'Razorpay' : 'mock'}, files: ${config.s3 ? 'S3' : 'local disk'})`);
+  console.log(`SeedhaPrint API on :${config.port} (test checkout: ${config.allowTestCheckout ? 'on' : 'off'}, files: ${config.s3 ? 'S3' : 'local disk'})`);
 });
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {

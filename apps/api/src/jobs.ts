@@ -5,7 +5,8 @@
 import crypto from 'node:crypto';
 import { canMove, CODE_ALPHABET, JOB_STATUSES, type JobStatus } from '@seedhaprint/shared';
 import { Job, type JobDoc } from './models';
-import { refund } from './payments';
+import { HttpError } from './auth';
+import { RazorpayError, refund, shopKeys } from './payments';
 
 export function randomCode(len: number, alphabet = CODE_ALPHABET): string {
   const bytes = crypto.randomBytes(len);
@@ -42,8 +43,18 @@ export async function markPaid(job: JobDoc, paymentId: string): Promise<JobDoc |
   });
 }
 
-export async function refundJob(job: JobDoc, note: string, routed: boolean): Promise<JobDoc | null> {
+export async function refundJob(job: JobDoc, note: string): Promise<JobDoc | null> {
   if (job.status !== 'failed') return null;
-  const refundId = job.payment?.paymentId ? await refund(job.payment.paymentId, job.total, routed) : '';
+  let refundId = '';
+  if (job.payment?.paymentId && !job.payment.mock) {
+    const keys = await shopKeys(job.shopId);
+    if (!keys) throw new HttpError(409, 'Connect your Razorpay account again to refund this job');
+    try {
+      refundId = await refund(keys, job.payment.paymentId, job.total);
+    } catch (e) {
+      if (e instanceof RazorpayError) throw new HttpError(502, `Razorpay could not refund: ${e.message}`);
+      throw e;
+    }
+  }
   return transition(job._id, 'refunded', { only: ['failed'], note, set: { 'payment.refundId': refundId } });
 }

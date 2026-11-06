@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { PDFDocument } from 'pdf-lib';
+import { degrees, PDFDocument } from 'pdf-lib';
 import sharp from 'sharp';
-import { DocumentError, makePrintReady } from '../src/documents';
+import { DocumentError, makePrintReady, rotatePdf } from '../src/documents';
 
 test('PDFs pass through untouched with their page count', async () => {
   const doc = await PDFDocument.create();
@@ -24,4 +24,12 @@ test('a landscape photo becomes one landscape A4 page', async () => {
 test('anything else is refused with a readable message', async () => {
   await assert.rejects(makePrintReady(Buffer.from('hello world'), 'notes.txt'), DocumentError);
   await assert.rejects(makePrintReady(Buffer.from('%PDF-1.7 garbage'), 'broken.pdf'), /damaged/);
+});
+
+test('rotation turns every page and adds to any rotation already there', async () => {
+  const doc = await PDFDocument.create();
+  doc.addPage();
+  doc.addPage().setRotation(degrees(90));
+  const out = await PDFDocument.load(await rotatePdf(Buffer.from(await doc.save()), 270));
+  assert.deepEqual(out.getPages().map((p) => p.getRotation().angle), [270, 0]);
 });

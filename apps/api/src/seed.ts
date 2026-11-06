@@ -23,7 +23,6 @@ if (!shop) {
     city: 'Chandigarh',
     phone: '9000000001',
     rates: { bwPerPage: 200, colorPerPage: 1000, colorEnabled: true },
-    fee: { type: 'percent', value: 500 },
   });
   // A known demo password must never exist on a public server.
   const password = process.env.NODE_ENV === 'production' ? crypto.randomBytes(12).toString('base64url') : 'shop123';

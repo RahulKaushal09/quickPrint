@@ -9,7 +9,7 @@
 
 import crypto from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
-import type { Types } from 'mongoose';
+import mongoose, { type Types } from 'mongoose';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { AgentMessage, AgentPrinter, JobOrder, ServerMessage } from '@seedhaprint/shared';
 import { config } from './config';
@@ -143,20 +143,29 @@ async function onDisconnect(deviceId: string, shopId: string) {
   if (stuck.length) await dispatchShop(shopId);
 }
 
-/** Pick a connected PC and printer for this job, or null if none can take it now. */
-function route(job: JobDoc, shopPrinters: { bw: string; color: string }, devices: Conn[]): { c: Conn; printer: string } | null {
-  const wanted = job.mode === 'color' ? shopPrinters.color : shopPrinters.bw;
-  const usable = (p: AgentPrinter) => p.status !== 'offline';
-  if (wanted) {
-    for (const c of devices) if (c.printers.some((p) => p.name === wanted && usable(p))) return { c, printer: wanted };
-    // The mapped printer belongs to a PC that isn't connected here; leave it for that PC.
-    return null;
-  }
-  for (const c of devices) {
-    const p = c.printers.find((x) => x.isDefault && usable(x)) ?? c.printers.find(usable);
-    if (p) return { c, printer: p.name };
-  }
-  return null;
+/** Old records stored one printer name; newer ones a list. */
+export function printerList(v: unknown): string[] {
+  return ([] as unknown[]).concat(v ?? []).filter((x): x is string => typeof x === 'string' && x !== '');
+}
+
+/**
+ * Pick a connected PC and printer for this job, or null if none can take it now.
+ * Assigned printers: the ready one with the least work wins, so jobs spread out
+ * and a jammed printer is skipped. Nothing assigned: the PC's default printer.
+ */
+function route(job: JobDoc, shopPrinters: { bw: unknown; color: unknown }, devices: Conn[], load: Map<string, number>): { c: Conn; printer: string } | null {
+  const wanted = printerList(job.mode === 'color' ? shopPrinters.color : shopPrinters.bw);
+  const options = devices
+    .flatMap((c) => c.printers.map((p) => ({ c, p })))
+    .filter(({ p }) => p.status !== 'offline' && (wanted.length === 0 || wanted.includes(p.name)));
+  if (!options.length) return null;
+  const rank = ({ p }: (typeof options)[number]) =>
+    [p.status === 'ready' ? 0 : 1, wanted.length ? (load.get(p.name) ?? 0) : p.isDefault ? 0 : 1, wanted.length ? wanted.indexOf(p.name) : (load.get(p.name) ?? 0)] as const;
+  options.sort((x, y) => {
+    const [a, b] = [rank(x), rank(y)];
+    return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+  });
+  return { c: options[0]!.c, printer: options[0]!.p.name };
 }
 
 export function orderFor(job: JobDoc, printer: string): JobOrder {
@@ -181,15 +190,24 @@ export async function dispatchShop(shopId: string | Types.ObjectId) {
   if (!shop) return;
 
   const queued = await Job.find({ shopId, status: 'queued' }).sort({ createdAt: 1 }).limit(20);
+  if (!queued.length) return;
+  const busy = await Job.aggregate([
+    { $match: { shopId: new mongoose.Types.ObjectId(String(shopId)), status: { $in: ['sent', 'printing'] } } },
+    { $group: { _id: '$printer', jobs: { $sum: 1 } } },
+  ]);
+  const load = new Map<string, number>(busy.map((b) => [String(b._id), b.jobs as number]));
   for (const job of queued) {
-    const r = route(job, shop.printers as { bw: string; color: string }, devices);
+    const r = route(job, shop.printers as { bw: unknown; color: unknown }, devices, load);
     if (!r) continue;
     const claimed = await transition(job._id, 'sent', {
       only: ['queued'],
       note: `Sent to ${r.printer}`,
       set: { deviceId: r.c.deviceId, printer: r.printer, sentAt: new Date(), acceptedAt: null },
     });
-    if (claimed) send(r.c, { type: 'job', job: orderFor(claimed, r.printer) });
+    if (claimed) {
+      load.set(r.printer, (load.get(r.printer) ?? 0) + 1);
+      send(r.c, { type: 'job', job: orderFor(claimed, r.printer) });
+    }
   }
 }
 
