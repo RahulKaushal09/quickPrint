@@ -13,5 +13,5 @@
     "agent:dev": "cd apps/agent && ../../.toolchain/go/bin/go run . run --dev",
     "agent:build": "node apps/agent/build/build.mjs"
   },
-  "engines": { "node": ">=20" }
+  "engines": { "node": ">=22.9" }
 }

@@ -27,7 +27,7 @@ QuickPrint/
 
 ## Run it locally
 
-Needs Node 20+ and MongoDB.
+Needs Node 22.9+ and MongoDB.
 
 ```bash
 npm install
