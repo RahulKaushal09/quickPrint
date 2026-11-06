@@ -5,13 +5,16 @@ function req(name: string, fallback?: string): string {
 }
 
 const env = process.env;
+const prod = env.NODE_ENV === 'production';
 
 export const config = {
   port: Number(env.PORT || 4100),
   mongoUri: req('MONGO_URI', 'mongodb://127.0.0.1:27017/quickprint'),
-  jwtSecret: req('JWT_SECRET', env.NODE_ENV === 'production' ? undefined : 'dev-only-secret'),
-  webUrl: (env.WEB_URL || 'http://localhost:3100').replace(/\/$/, ''),
-  apiUrl: (env.API_URL || 'http://localhost:4100').replace(/\/$/, ''),
+  jwtSecret: req('JWT_SECRET', prod ? undefined : 'dev-only-secret'),
+  // The only place these addresses live. Production refuses to start without them,
+  // so QR codes can never silently point at localhost.
+  webUrl: req('WEB_URL', prod ? undefined : 'http://localhost:3100').replace(/\/$/, ''),
+  apiUrl: req('API_URL', prod ? undefined : 'http://localhost:4100').replace(/\/$/, ''),
   razorpay: {
     keyId: env.RAZORPAY_KEY_ID || '',
     keySecret: env.RAZORPAY_KEY_SECRET || '',
