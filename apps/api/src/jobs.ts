@@ -3,7 +3,7 @@
 // can never both apply the same step.
 
 import crypto from 'node:crypto';
-import { canMove, CODE_ALPHABET, JOB_STATUSES, type JobStatus } from '@quickprint/shared';
+import { canMove, CODE_ALPHABET, JOB_STATUSES, type JobStatus } from '@seedhaprint/shared';
 import { Job, type JobDoc } from './models';
 import { refund } from './payments';
 

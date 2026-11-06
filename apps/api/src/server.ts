@@ -47,7 +47,7 @@ setInterval(() => void cleanup().catch((e) => console.error('[cleanup]', e)), 5 
 void cleanup();
 
 server.listen(config.port, () => {
-  console.log(`QuickPrint API on :${config.port} (payments: ${paymentsLive ? 'Razorpay' : 'mock'}, files: ${config.s3 ? 'S3' : 'local disk'})`);
+  console.log(`SeedhaPrint API on :${config.port} (payments: ${paymentsLive ? 'Razorpay' : 'mock'}, files: ${config.s3 ? 'S3' : 'local disk'})`);
 });
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {

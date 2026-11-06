@@ -1,4 +1,4 @@
-export { rupees } from '@quickprint/shared';
+export { rupees } from '@seedhaprint/shared';
 
 export function timeAgo(iso?: string | Date | null): string {
   if (!iso) return '';

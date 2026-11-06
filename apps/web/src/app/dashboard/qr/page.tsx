@@ -22,7 +22,7 @@ export default function QrPage() {
     const url = await QRCode.toDataURL(qrUrl, { errorCorrectionLevel: 'H', width: 1600, margin: 2, color: { dark: '#0b1220', light: '#ffffff' } });
     const a = document.createElement('a');
     a.href = url;
-    a.download = `quickprint-${shop.code}.png`;
+    a.download = `seedhaprint-${shop.code}.png`;
     a.click();
   }
 
@@ -68,7 +68,7 @@ export default function QrPage() {
           <div className="cmyk-bar h-[2.2cqw]" />
           <div className="flex flex-1 flex-col items-center px-[8cqw] pt-[7cqw] text-center">
             <div className="flex items-center gap-[1.6cqw] text-[3.4cqw] font-extrabold uppercase tracking-[0.2em] text-ink-soft">
-              <Mark size={22} /> QuickPrint
+              <Mark size={22} /> SeedhaPrint
             </div>
             <h2 className="mt-[4cqw] text-[8.6cqw] font-extrabold leading-[1.02] tracking-tight">
               Print from

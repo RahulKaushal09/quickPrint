@@ -3,7 +3,7 @@
 import bcrypt from 'bcryptjs';
 import { Router } from 'express';
 import { z } from 'zod';
-import { PAID_STATUSES } from '@quickprint/shared';
+import { PAID_STATUSES } from '@seedhaprint/shared';
 import { HttpError, requireAdmin, requireUser } from '../auth';
 import { config } from '../config';
 import { ONLINE_WINDOW_MS } from '../hub';

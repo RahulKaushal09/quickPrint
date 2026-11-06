@@ -2,12 +2,12 @@
 
 import { Loader2, Minus, Plus, X } from 'lucide-react';
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { STATUS_LABEL, type JobStatus } from '@quickprint/shared';
+import { STATUS_LABEL, type JobStatus } from '@seedhaprint/shared';
 import { cx } from '@/lib/format';
 
 // ---------------------------------------------------------------- brand
 
-/** Three process-colour discs overprinting into ink: the QuickPrint mark. */
+/** Three process-colour discs overprinting into ink: the SeedhaPrint mark. */
 export function Mark({ size = 28, className }: { size?: number; className?: string }) {
   return (
     // isolation keeps the overprint between the three discs, so the mark looks the same on paper and on ink.
@@ -24,7 +24,7 @@ export function Logo({ className, light }: { className?: string; light?: boolean
     <span className={cx('inline-flex items-center gap-2 font-extrabold tracking-tight', light ? 'text-white' : 'text-ink', className)}>
       <Mark size={26} />
       <span className="text-[1.05rem]">
-        Quick<span className={light ? 'text-white/70' : 'text-ink-soft'}>Print</span>
+        Seedha<span className={light ? 'text-white/70' : 'text-ink-soft'}>Print</span>
       </span>
     </span>
   );

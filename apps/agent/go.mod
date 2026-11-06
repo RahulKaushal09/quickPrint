@@ -1,4 +1,4 @@
-module quickprint/agent
+module seedhaprint/agent
 
 // Go 1.20 is the last release that runs on Windows 7. Do not raise this.
 go 1.20

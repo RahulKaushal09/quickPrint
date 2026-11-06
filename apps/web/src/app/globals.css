@@ -1,7 +1,7 @@
 @import 'tailwindcss';
 
 /*
- * QuickPrint design tokens.
+ * SeedhaPrint design tokens.
  * The palette is printing's own: paper, ink (K) and the three process colours
  * (C, M, Y). Ink carries the UI; CMY appear only where colour means something
  * (colour printing, brand mark, status accents), so the product feels calm
@@ -36,6 +36,9 @@
   --color-bad: #d93a3f;
   --color-bad-soft: #fde7e7;
 
+  --color-wa: #0e8a5a;
+  --color-wa-dark: #0a6f48;
+
   --radius-xl: 1rem;
   --radius-2xl: 1.25rem;
   --radius-3xl: 1.75rem;
@@ -69,6 +72,8 @@
 
 @layer base {
   html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 5rem;
     -webkit-tap-highlight-color: transparent;
     text-rendering: optimizeLegibility;
   }
@@ -105,6 +110,19 @@
     linear-gradient(to right, rgb(11 18 32 / 0.045) 1px, transparent 1px),
     linear-gradient(to bottom, rgb(11 18 32 / 0.045) 1px, transparent 1px);
   background-size: 28px 28px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 @media print {

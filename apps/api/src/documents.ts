@@ -9,7 +9,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { PDFDocument } from 'pdf-lib';
 import sharp from 'sharp';
-import { LIMITS } from '@quickprint/shared';
+import { LIMITS } from '@seedhaprint/shared';
 import { config } from './config';
 
 const run = promisify(execFile);
@@ -81,7 +81,7 @@ async function imageToPdf(buf: Buffer): Promise<Buffer> {
 
 async function officeToPdf(buf: Buffer, name: string): Promise<Buffer> {
   if (!officeSupported()) throw new DocumentError('Word and Office files are not accepted here yet. Please save it as PDF and upload again.');
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'qp-office-'));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'sp-office-'));
   try {
     const input = path.join(dir, 'input' + path.extname(name).toLowerCase());
     await fs.writeFile(input, buf);

@@ -14,4 +14,3 @@ next-env.d.ts
 apps/agent/dev-data
 apps/agent/build/out
 apps/agent/*.syso
-apps/web/public/downloads/*.exe

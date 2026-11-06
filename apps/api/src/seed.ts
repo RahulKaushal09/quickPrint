@@ -1,5 +1,6 @@
 // Creates the admin account and one demo shop with an owner login. Safe to re-run.
 
+import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
 import { config } from './config';
@@ -24,8 +25,10 @@ if (!shop) {
     rates: { bwPerPage: 200, colorPerPage: 1000, colorEnabled: true },
     fee: { type: 'percent', value: 500 },
   });
-  await User.create({ name: 'Rakesh Sharma', phone: '9000000001', role: 'owner', shopId: shop._id, passwordHash: await bcrypt.hash('shop123', 10) });
-  console.log('shop owner  9000000001 / shop123');
+  // A known demo password must never exist on a public server.
+  const password = process.env.NODE_ENV === 'production' ? crypto.randomBytes(12).toString('base64url') : 'shop123';
+  await User.create({ name: 'Rakesh Sharma', phone: '9000000001', role: 'owner', shopId: shop._id, passwordHash: await bcrypt.hash(password, 10) });
+  console.log(`shop owner  9000000001 / ${password}`);
 }
 console.log(`customer QR ${config.webUrl}/s/${shop.code}`);
 await mongoose.disconnect();

@@ -1,5 +1,5 @@
 {
-  "name": "@quickprint/api",
+  "name": "@seedhaprint/api",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1161.0",
-    "@quickprint/shared": "*",
+    "@seedhaprint/shared": "*",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "express": "^5.1.0",

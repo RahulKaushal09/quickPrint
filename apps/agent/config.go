@@ -20,7 +20,7 @@ type Config struct {
 
 var devMode bool
 
-// dataDir is C:\ProgramData\QuickPrintAgent on Windows (shared by every user
+// dataDir is C:\ProgramData\SeedhaPrintAgent on Windows (shared by every user
 // of the PC, kept across updates) and ./dev-data when developing elsewhere.
 func dataDir() string {
 	if runtime.GOOS == "windows" && !devMode {
@@ -28,7 +28,7 @@ func dataDir() string {
 		if base == "" {
 			base = `C:\ProgramData`
 		}
-		return filepath.Join(base, "QuickPrintAgent")
+		return filepath.Join(base, "SeedhaPrintAgent")
 	}
 	return "dev-data"
 }

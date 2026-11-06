@@ -1,4 +1,4 @@
-# QuickPrint
+# SeedhaPrint
 
 QR self-service printing for small print shops. A customer scans the shop's QR, uploads a PDF or photo, picks black & white or colour and the number of copies, pays online, and the job prints on that shop's printer automatically. The customer collects it with a 4-digit pickup code.
 
@@ -11,7 +11,7 @@ Customer phone ──▶ Web (Next.js) ──▶ API (Express + MongoDB) ◀═�
 ## What's inside
 
 ```
-QuickPrint/
+SeedhaPrint/
 ├── packages/shared   Job states, pricing, agent protocol (used by API and web)
 ├── apps/api          Express 5 + Mongoose: public, shop, admin, agent routes + WebSocket hub
 ├── apps/web          Next.js 16 + Tailwind 4: customer QR flow, shop dashboard, admin, home page
@@ -51,9 +51,9 @@ Ports 3100/4100 are used so it doesn't clash with other local projects on 3000/4
 
 ## The Windows agent
 
-`npm run agent:build -- --server https://api.yourdomain.com --version 1.0.0`
+`npm run agent:build -- --version 1.0.0` (points at `https://api.seedhaprint.in`; pass `--server` to use another address)
 
-Produces `apps/agent/build/out/QuickPrintAgent-Setup.exe` and copies it to `apps/web/public/downloads/`, which is where the dashboard's **Download agent** button points. Run it on macOS or Linux; it fetches Go 1.20, `rsrc` and SumatraPDF into `.toolchain/` on first use. Needs `makensis` (`brew install makensis`).
+Produces `apps/agent/build/out/SeedhaPrintAgent-Setup.exe` and copies it to `apps/web/public/downloads/`, which is where the dashboard's **Download agent** button points. Run it on macOS or Linux; it fetches Go 1.20, `rsrc` and SumatraPDF into `.toolchain/` on first use. Needs `makensis` (`brew install makensis`).
 
 Why it runs on Windows 7 as well as 10/11:
 
@@ -84,22 +84,24 @@ RAZORPAY_KEY_SECRET=...
 RAZORPAY_WEBHOOK_SECRET=...
 ```
 
-- Add a webhook in Razorpay → `https://api.yourdomain.com/api/payments/webhook`, events `payment.captured` and `order.paid`. The webhook marks a job paid even if the customer closes the browser.
+- Add a webhook in Razorpay → `https://api.seedhaprint.in/api/payments/webhook`, events `payment.captured` and `order.paid`. The webhook marks a job paid even if the customer closes the browser.
 - **Route (recommended):** create a linked account for each shop in Razorpay Route and paste its `acc_...` in the admin panel. The order then carries a transfer, so the shop's share settles straight to the shop and the platform keeps its fee. Without it, everything settles to your account.
 - Refunds from the dashboard call Razorpay; with Route they also reverse the shop's transfer.
 - A job is only printed after the server confirms the payment with Razorpay (signature + amount + order).
 
 ## Deploying
 
-- **API:** any Node host with WebSockets (a VPS with PM2, Railway, Render, Fly). `npm run start -w @quickprint/api`. Put it behind HTTPS at e.g. `https://api.yourdomain.com`. Set `NODE_ENV=production`, a long `JWT_SECRET`, `WEB_URL`, `API_URL`, `MONGO_URI` (Atlas).
-- **Web:** Vercel or any Node host. `npm run build -w @quickprint/web`. Set `NEXT_PUBLIC_API_URL`.
-- **Agent:** rebuild the installer with `--server https://api.yourdomain.com` and redeploy the web app so the download is current.
+- **API:** any Node host with WebSockets (a VPS with PM2, Railway, Render, Fly). `npm run start -w @seedhaprint/api`. Put it behind HTTPS at e.g. `https://api.seedhaprint.in`. Set `NODE_ENV=production`, a long `JWT_SECRET`, `WEB_URL`, `API_URL`, `MONGO_URI` (Atlas).
+- **Web:** Vercel or any Node host. `npm run build -w @seedhaprint/web`. Set `NEXT_PUBLIC_API_URL=https://api.seedhaprint.in` and `NEXT_PUBLIC_SITE_URL=https://seedhaprint.in`, plus `NEXT_PUBLIC_WHATSAPP_NUMBER` if it changes.
+- **Agent:** the installer in `apps/web/public/downloads/` is committed and already points at `https://api.seedhaprint.in`. If the API address changes, rebuild it and commit; installed PCs must then be paired again.
+- **Addresses:** `WEB_URL` and `API_URL` (API `.env`), `NEXT_PUBLIC_*` (Vercel). No address is hardcoded in the code.
 - **Word files (optional):** install LibreOffice on the API server and set `SOFFICE_PATH`; the customer page then accepts .doc/.docx automatically.
 
 ## Not done yet
 
 - Real Razorpay keys, the Razorpay Route linked accounts and the webhook (test checkout works end to end).
-- Hosting and a domain.
+- Hosting, and buying seedhaprint.in.
+- Terms, Privacy, Refund and Contact pages, which Razorpay asks for before activating an account.
 - The installer is unsigned, so Windows SmartScreen will warn ("More info → Run anyway") until you buy a code-signing certificate.
 - Real printing on Windows 7 and Windows 10 hardware is untested. Everything up to SumatraPDF is tested (printer listing compiles against the Windows API, command lines are unit-tested, full flow runs with simulated printers).
 - Duplex, page ranges and paper sizes other than A4 are deliberately left out to keep the customer flow to two choices.

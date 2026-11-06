@@ -1,14 +1,14 @@
 {
-  "name": "quickprint",
+  "name": "seedhaprint",
   "private": true,
   "version": "0.1.0",
-  "description": "QuickPrint - QR self-service printing for neighbourhood print shops",
+  "description": "SeedhaPrint - QR self-service printing for neighbourhood print shops",
   "workspaces": ["packages/*", "apps/api", "apps/web"],
   "scripts": {
-    "dev:api": "npm run dev -w @quickprint/api",
-    "dev:web": "npm run dev -w @quickprint/web",
-    "seed": "npm run seed -w @quickprint/api",
-    "test": "npm test -w @quickprint/shared && npm test -w @quickprint/api",
+    "dev:api": "npm run dev -w @seedhaprint/api",
+    "dev:web": "npm run dev -w @seedhaprint/web",
+    "seed": "npm run seed -w @seedhaprint/api",
+    "test": "npm test -w @seedhaprint/shared && npm test -w @seedhaprint/api",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "agent:dev": "cd apps/agent && ../../.toolchain/go/bin/go run . run --dev",
     "agent:build": "node apps/agent/build/build.mjs"

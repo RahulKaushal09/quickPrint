@@ -27,7 +27,7 @@ const PRINTER_STATUS: Record<string, { label: string; tone: 'ok' | 'bad' | 'warn
   error: { label: 'Needs attention', tone: 'bad' },
 };
 
-const AGENT_DOWNLOAD = '/downloads/QuickPrintAgent-Setup.exe';
+const AGENT_DOWNLOAD = '/downloads/SeedhaPrintAgent-Setup.exe';
 
 export default function PrintersPage() {
   const { shop, setShop } = useShop();
@@ -80,7 +80,7 @@ export default function PrintersPage() {
     <>
       <PageHeader
         title="Printers"
-        description="The shop PC runs the QuickPrint Agent and prints paid jobs on these printers."
+        description="The shop PC runs the SeedhaPrint Agent and prints paid jobs on these printers."
         actions={
           <Button icon={<Plus className="size-4" />} onClick={() => setPairOpen(true)}>
             Add shop PC
@@ -128,7 +128,7 @@ export default function PrintersPage() {
       ) : devices.length === 0 ? (
         <Card>
           <Empty icon={<Monitor className="size-6" />} title="No shop PC connected">
-            Install the QuickPrint Agent on the computer your printers are connected to. It works on Windows 7, 8, 10 and 11.
+            Install the SeedhaPrint Agent on the computer your printers are connected to. It works on Windows 7, 8, 10 and 11.
             <div className="mt-5 flex flex-wrap justify-center gap-2">
               <a href={AGENT_DOWNLOAD} download>
                 <Button variant="secondary" icon={<Download className="size-4" />}>
@@ -221,7 +221,7 @@ function PairModal({ open, onClose }: { open: boolean; onClose: () => void }) {
           <p>Use the computer your printers are connected to. Works on Windows 7, 8, 10 and 11.</p>
           <a href={AGENT_DOWNLOAD} download className="mt-3 inline-block">
             <Button variant="secondary" icon={<Download className="size-4" />}>
-              QuickPrintAgent-Setup.exe
+              SeedhaPrintAgent-Setup.exe
             </Button>
           </a>
           <p className="mt-2 text-xs">If Windows shows &ldquo;Windows protected your PC&rdquo;, click More info &rarr; Run anyway.</p>

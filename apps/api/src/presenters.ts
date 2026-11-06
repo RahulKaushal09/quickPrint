@@ -1,7 +1,7 @@
 // What each audience gets to see. Customers never see storage keys, device
 // ids or payment ids; shop owners never see other shops.
 
-import { platformCut, type PlatformFee } from '@quickprint/shared';
+import { platformCut, type PlatformFee } from '@seedhaprint/shared';
 import { ONLINE_WINDOW_MS } from './hub';
 import { Device, type JobDoc, type ShopDoc } from './models';
 

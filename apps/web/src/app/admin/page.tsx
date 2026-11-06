@@ -70,10 +70,10 @@ export default function AdminPage() {
   }
 
   return (
-    <AppShell nav={[{ href: '/admin', label: 'Shops', icon: Store }]} title="QuickPrint admin" subtitle="All shops" user={me}>
+    <AppShell nav={[{ href: '/admin', label: 'Shops', icon: Store }]} title="SeedhaPrint admin" subtitle="All shops" user={me}>
       <PageHeader
         title="Shops"
-        description="Every print shop on QuickPrint."
+        description="Every print shop on SeedhaPrint."
         actions={
           <Button icon={<Plus className="size-4" />} onClick={() => setCreating(true)}>
             Add shop

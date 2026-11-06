@@ -9,8 +9,8 @@ export class ApiError extends Error {
   }
 }
 
-const TOKEN_KEY = 'qp.token';
-const SHOP_KEY = 'qp.viewShop'; // admin "view as shop"
+const TOKEN_KEY = 'sp.token';
+const SHOP_KEY = 'sp.viewShop'; // admin "view as shop"
 
 export const session = {
   token: () => (typeof window === 'undefined' ? null : localStorage.getItem(TOKEN_KEY)),

@@ -11,7 +11,7 @@ import crypto from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import type { Types } from 'mongoose';
 import { WebSocket, WebSocketServer } from 'ws';
-import type { AgentMessage, AgentPrinter, JobOrder, ServerMessage } from '@quickprint/shared';
+import type { AgentMessage, AgentPrinter, JobOrder, ServerMessage } from '@seedhaprint/shared';
 import { config } from './config';
 import { transition } from './jobs';
 import { Device, Job, Shop, type DeviceDoc, type JobDoc } from './models';

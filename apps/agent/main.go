@@ -1,9 +1,9 @@
-// QuickPrint Agent: connects a print shop's Windows PC to QuickPrint and
+// SeedhaPrint Agent: connects a print shop's Windows PC to SeedhaPrint and
 // prints paid customer jobs on the shop's printers.
 //
-//	QuickPrintAgent.exe                     run (what the Startup shortcut does)
-//	QuickPrintAgent.exe pair CODE [SERVER]  pair this PC with a shop (used by the installer)
-//	QuickPrintAgent.exe status              open the status page
+//	SeedhaPrintAgent.exe                     run (what the Startup shortcut does)
+//	SeedhaPrintAgent.exe pair CODE [SERVER]  pair this PC with a shop (used by the installer)
+//	SeedhaPrintAgent.exe status              open the status page
 //
 // Built with Go 1.20 for windows/386 so a single exe runs on Windows 7, 8, 10
 // and 11, 32- and 64-bit.
@@ -45,7 +45,7 @@ func main() {
 		run()
 	case "pair":
 		if len(args) < 1 {
-			fail("usage: QuickPrintAgent pair CODE [SERVER]")
+			fail("usage: SeedhaPrintAgent pair CODE [SERVER]")
 		}
 		server := defaultServer
 		if len(args) > 1 && args[1] != "" {
@@ -107,7 +107,7 @@ func run() {
 	if err != nil {
 		logf("reading config: %v", err)
 	}
-	logf("QuickPrint Agent %s starting on %s, data in %s", version, osDescription(), dataDir())
+	logf("SeedhaPrint Agent %s starting on %s, data in %s", version, osDescription(), dataDir())
 	a := newAgent(cfg)
 	go a.serveStatus(ln)
 	if cfg == nil && runtime.GOOS == "windows" {

@@ -1,5 +1,5 @@
 import mongoose, { Schema, type InferSchemaType, type HydratedDocument } from 'mongoose';
-import { JOB_STATUSES } from '@quickprint/shared';
+import { JOB_STATUSES } from '@seedhaprint/shared';
 
 // ---------------------------------------------------------------- Shop
 // One row per print shop. `code` is what the QR points at: WEB_URL/s/<code>.

@@ -3,7 +3,7 @@
 import { AlertTriangle, Check, CreditCard, FileText, Printer, RotateCcw, Send, Store } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import type { JobStatus } from '@quickprint/shared';
+import type { JobStatus } from '@seedhaprint/shared';
 import { Button, Card, Mark, Skeleton } from '@/components/ui';
 import { api } from '@/lib/api';
 import { cx, plural, rupees } from '@/lib/format';
@@ -196,7 +196,7 @@ function Shell({ children, shop }: { children: React.ReactNode; shop?: { name: s
     <main className="mx-auto min-h-dvh max-w-lg px-5 pb-10 pt-[max(env(safe-area-inset-top),20px)]">
       <div className="mb-5 flex items-center justify-between">
         <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-[0.14em] text-ink-mute">
-          <Mark size={18} /> QuickPrint
+          <Mark size={18} /> SeedhaPrint
         </span>
         {shop && <span className="truncate pl-4 text-xs font-semibold text-ink-soft">{shop.name}</span>}
       </div>

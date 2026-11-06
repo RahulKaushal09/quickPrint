@@ -1,11 +1,11 @@
 // Builds the Windows installer from macOS/Linux:
 //
-//   node apps/agent/build/build.mjs --server https://api.yourdomain.com [--version 1.0.0]
+//   node apps/agent/build/build.mjs [--server https://api.seedhaprint.in] [--version 1.0.0]
 //
 //   1. icon (.ico) drawn from the brand mark
 //   2. Windows resources (icon + manifest) via rsrc
-//   3. QuickPrintAgent.exe: Go 1.20, windows/386, no console window
-//   4. QuickPrintAgent-Setup.exe via NSIS (makensis), with SumatraPDF 3.4.6 (32-bit)
+//   3. SeedhaPrintAgent.exe: Go 1.20, windows/386, no console window
+//   4. SeedhaPrintAgent-Setup.exe via NSIS (makensis), with SumatraPDF 3.4.6 (32-bit)
 //   5. copies the installer to apps/web/public/downloads/ for the dashboard's download button
 //
 // Needs: makensis (brew install makensis). Go 1.20, rsrc and SumatraPDF are fetched into .toolchain/.
@@ -27,7 +27,7 @@ const arg = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`);
   return i > 0 ? process.argv[i + 1] : fallback;
 };
-const SERVER = arg('server', process.env.AGENT_SERVER || 'http://localhost:4100');
+const SERVER = arg('server', process.env.AGENT_SERVER || 'https://api.seedhaprint.in');
 const VERSION = arg('version', '1.0.0');
 if (!/^\d+\.\d+\.\d+$/.test(VERSION)) throw new Error('--version must look like 1.2.3');
 
@@ -102,7 +102,7 @@ try {
   run(goBin, ['test', './...'], { cwd: agentDir, env: goEnv });
   run(
     goBin,
-    ['build', '-trimpath', '-ldflags', `-H windowsgui -s -w -X main.version=${VERSION} -X main.defaultServer=${SERVER}`, '-o', path.join(stage, 'QuickPrintAgent.exe'), '.'],
+    ['build', '-trimpath', '-ldflags', `-H windowsgui -s -w -X main.version=${VERSION} -X main.defaultServer=${SERVER}`, '-o', path.join(stage, 'SeedhaPrintAgent.exe'), '.'],
     { cwd: agentDir, env: { ...goEnv, GOOS: 'windows', GOARCH: '386', CGO_ENABLED: '0' } },
   );
 } finally {
@@ -111,7 +111,7 @@ try {
 fs.copyFileSync(sumatra, path.join(stage, 'SumatraPDF.exe'));
 
 // ---- 4. installer
-const setup = path.join(out, 'QuickPrintAgent-Setup.exe');
+const setup = path.join(out, 'SeedhaPrintAgent-Setup.exe');
 const nsi = path.join(out, 'installer.nsi');
 fs.writeFileSync(nsi, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), fs.readFileSync(path.join(here, 'installer.nsi'))])); // makensis wants a UTF-8 BOM
 run('makensis', ['-WX', '-V2', `-DVERSION=${VERSION}`, `-DSERVER=${SERVER}`, `-DSRC=${stage}`, `-DOUTFILE=${setup}`, nsi], {
@@ -121,10 +121,10 @@ run('makensis', ['-WX', '-V2', `-DVERSION=${VERSION}`, `-DSERVER=${SERVER}`, `-D
 // ---- 5. publish for the dashboard download button
 const pub = path.join(root, 'apps/web/public/downloads');
 fs.mkdirSync(pub, { recursive: true });
-fs.copyFileSync(setup, path.join(pub, 'QuickPrintAgent-Setup.exe'));
+fs.copyFileSync(setup, path.join(pub, 'SeedhaPrintAgent-Setup.exe'));
 
 const mb = (f) => (fs.statSync(f).size / 1024 / 1024).toFixed(1) + ' MB';
-console.log(`\nQuickPrint Agent ${VERSION} for ${SERVER}`);
-console.log(`  agent      ${path.join(stage, 'QuickPrintAgent.exe')} (${mb(path.join(stage, 'QuickPrintAgent.exe'))})`);
+console.log(`\nSeedhaPrint Agent ${VERSION} for ${SERVER}`);
+console.log(`  agent      ${path.join(stage, 'SeedhaPrintAgent.exe')} (${mb(path.join(stage, 'SeedhaPrintAgent.exe'))})`);
 console.log(`  installer  ${setup} (${mb(setup)})`);
-console.log(`  published  apps/web/public/downloads/QuickPrintAgent-Setup.exe`);
+console.log(`  published  apps/web/public/downloads/SeedhaPrintAgent-Setup.exe`);

@@ -9,7 +9,7 @@ const prod = env.NODE_ENV === 'production';
 
 export const config = {
   port: Number(env.PORT || 4100),
-  mongoUri: req('MONGO_URI', 'mongodb://127.0.0.1:27017/quickprint'),
+  mongoUri: req('MONGO_URI', 'mongodb://127.0.0.1:27017/seedhaprint'),
   jwtSecret: req('JWT_SECRET', prod ? undefined : 'dev-only-secret'),
   // The only place these addresses live. Production refuses to start without them,
   // so QR codes can never silently point at localhost.

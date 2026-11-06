@@ -6,7 +6,7 @@ import { Router, type Request } from 'express';
 import rateLimit from 'express-rate-limit';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { z } from 'zod';
-import { BRAND } from '@quickprint/shared';
+import { BRAND } from '@seedhaprint/shared';
 import { HttpError } from '../auth';
 import { authenticate, hashToken } from '../hub';
 import { Device, Job, PairCode, Shop } from '../models';

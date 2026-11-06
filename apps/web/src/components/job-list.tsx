@@ -2,7 +2,7 @@
 
 import { AlertTriangle, Eye, MoreHorizontal, RotateCcw, Undo2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import type { JobStatus } from '@quickprint/shared';
+import type { JobStatus } from '@seedhaprint/shared';
 import { Badge, Button, Field, Input, Modal, StatusPill, useToast } from '@/components/ui';
 import { api, openAuthed } from '@/lib/api';
 import { cx, plural, rupees, timeAgo } from '@/lib/format';

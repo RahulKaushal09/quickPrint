@@ -27,7 +27,7 @@ var statusTmpl = template.Must(template.New("s").Funcs(template.FuncMap{
 	},
 }).Parse(`<!doctype html>
 <html><head><meta charset="utf-8"><meta http-equiv="X-UA-Compatible" content="IE=edge">
-<meta http-equiv="refresh" content="5"><title>QuickPrint Agent</title>
+<meta http-equiv="refresh" content="5"><title>SeedhaPrint Agent</title>
 <style>
 body{margin:0;background:#f4f5f8;font-family:"Segoe UI",Arial,sans-serif;color:#0b1220}
 .wrap{max-width:760px;margin:0 auto;padding:28px 20px}
@@ -46,12 +46,12 @@ th{color:#5b6475;font-weight:600;font-size:12px;text-transform:uppercase;letter-
 input{font-size:18px;padding:8px 10px;border:1px solid #cfd4de;border-radius:8px;letter-spacing:2px;text-transform:uppercase}
 button{font-size:15px;padding:9px 18px;border:0;border-radius:8px;background:#0b1220;color:#fff;cursor:pointer}
 </style></head><body><div class="wrap">
-<div class="brand"><span style="background:#00aeef"></span><span style="background:#ec008c"></span><span style="background:#ffe600"></span> QuickPrint Agent <span class="muted">v{{.Version}}</span></div>
+<div class="brand"><span style="background:#00aeef"></span><span style="background:#ec008c"></span><span style="background:#ffe600"></span> SeedhaPrint Agent <span class="muted">v{{.Version}}</span></div>
 <div class="card">
 {{if .Connected}}<div class="state ok">&#9679; Connected</div><div class="muted">{{.Shop}} &middot; {{.Server}} &middot; since {{ago .Since}}</div>
 {{else if .Paired}}<div class="state bad">&#9679; Not connected</div><div class="muted">{{.Error}}</div><div class="muted">Retrying automatically. Check the internet connection.</div>
 {{else}}<div class="state bad">This PC is not paired</div>
-<p class="muted">In the QuickPrint dashboard open <b>Printers &rarr; Add shop PC</b> and type the code here.</p>{{end}}
+<p class="muted">In the SeedhaPrint dashboard open <b>Printers &rarr; Add shop PC</b> and type the code here.</p>{{end}}
 {{if .ShowPair}}<form method="post" action="/pair" style="margin-top:14px">
 <input name="code" maxlength="12" placeholder="PAIRING CODE" autocomplete="off">
 <input name="server" value="{{.ServerValue}}" style="letter-spacing:0;text-transform:none;font-size:13px;width:260px">

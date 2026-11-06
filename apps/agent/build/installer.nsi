@@ -1,12 +1,12 @@
-; QuickPrint Agent - Windows installer (NSIS). Built by build.mjs on any OS.
+; SeedhaPrint Agent - Windows installer (NSIS). Built by build.mjs on any OS.
 ;
 ;   Welcome -> Connect this PC (pairing code) -> Install -> Finish
 ;
 ; Runs on Windows 7, 8, 10 and 11 (32 and 64-bit): the agent is a 32-bit exe
 ; with no runtime to install, and this script uses only tools Windows 7 ships with.
 ;
-; Program   C:\Program Files (x86)\QuickPrint Agent\   (agent, SumatraPDF)
-; Data      C:\ProgramData\QuickPrintAgent\            (pairing, logs; kept on update)
+; Program   C:\Program Files (x86)\SeedhaPrint Agent\   (agent, SumatraPDF)
+; Data      C:\ProgramData\SeedhaPrintAgent\            (pairing, logs; kept on update)
 ; Autostart all-users Startup folder, so it runs as the signed-in user and sees their printers.
 ;
 ; Defines from the build: VERSION (x.y.z), SERVER (https://...), SRC (staging folder), OUTFILE
@@ -16,10 +16,10 @@ Unicode true
 !include "nsDialogs.nsh"
 !include "LogicLib.nsh"
 
-!define APP "QuickPrint Agent"
-!define EXE "QuickPrintAgent.exe"
-!define DATADIR "$APPDATA\QuickPrintAgent" ; $APPDATA = C:\ProgramData under SetShellVarContext all
-!define UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\QuickPrintAgent"
+!define APP "SeedhaPrint Agent"
+!define EXE "SeedhaPrintAgent.exe"
+!define DATADIR "$APPDATA\SeedhaPrintAgent" ; $APPDATA = C:\ProgramData under SetShellVarContext all
+!define UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\SeedhaPrintAgent"
 !define STATUS_URL "http://localhost:47210"
 
 Name "${APP}"
@@ -27,22 +27,22 @@ OutFile "${OUTFILE}"
 InstallDir "$PROGRAMFILES\${APP}"
 RequestExecutionLevel admin
 SetCompressor /SOLID lzma
-BrandingText "QuickPrint"
+BrandingText "SeedhaPrint"
 ManifestSupportedOS all
 
 VIProductVersion "${VERSION}.0"
 VIAddVersionKey "ProductName" "${APP}"
-VIAddVersionKey "CompanyName" "QuickPrint"
+VIAddVersionKey "CompanyName" "SeedhaPrint"
 VIAddVersionKey "FileDescription" "${APP} Setup"
 VIAddVersionKey "FileVersion" "${VERSION}"
 VIAddVersionKey "ProductVersion" "${VERSION}"
-VIAddVersionKey "LegalCopyright" "QuickPrint"
+VIAddVersionKey "LegalCopyright" "SeedhaPrint"
 
 !define MUI_ICON "${SRC}\agent.ico"
 !define MUI_UNICON "${SRC}\agent.ico"
 !define MUI_ABORTWARNING
 !define MUI_WELCOMEPAGE_TITLE "${APP} ${VERSION}"
-!define MUI_WELCOMEPAGE_TEXT "This connects your shop's printers to QuickPrint, so customers who scan your QR code and pay get their prints automatically.$\r$\n$\r$\nInstall it on the computer the printers are connected to, and make sure the printer drivers are already installed.$\r$\n$\r$\nKeep the QuickPrint dashboard open: you will need a pairing code from Printers > Add shop PC."
+!define MUI_WELCOMEPAGE_TEXT "This connects your shop's printers to SeedhaPrint, so customers who scan your QR code and pay get their prints automatically.$\r$\n$\r$\nInstall it on the computer the printers are connected to, and make sure the printer drivers are already installed.$\r$\n$\r$\nKeep the SeedhaPrint dashboard open: you will need a pairing code from Printers > Add shop PC."
 !define MUI_FINISHPAGE_TITLE "Your printers are connected"
 !define MUI_FINISHPAGE_TEXT "The agent runs quietly in the background and starts by itself with Windows.$\r$\n$\r$\nCheck the Printers page in your dashboard: this PC and its printers should appear in a few seconds. Send a test page to make sure."
 !define MUI_FINISHPAGE_RUN
@@ -78,7 +78,7 @@ FunctionEnd
 !macroend
 
 Function PairPage
-  !insertmacro MUI_HEADER_TEXT "Connect this PC" "Pair it with your shop in the QuickPrint dashboard."
+  !insertmacro MUI_HEADER_TEXT "Connect this PC" "Pair it with your shop in the SeedhaPrint dashboard."
   nsDialogs::Create 1018
   Pop $Dialog
   ${If} $Dialog == error
@@ -100,7 +100,7 @@ Function PairPage
   SendMessage $CodeField ${WM_SETFONT} $1 1
   ${NSD_SetFocus} $CodeField
 
-  ${NSD_CreateLabel} 0 82u 100% 10u "Server (only change this if QuickPrint support asks you to)"
+  ${NSD_CreateLabel} 0 82u 100% 10u "Server (only change this if SeedhaPrint support asks you to)"
   Pop $0
   ${NSD_CreateText} 0 94u 100% 13u $Server
   Pop $ServerField
@@ -116,7 +116,7 @@ Function PairPageLeave
     ${If} $AlreadyPaired == "1"
       Return
     ${EndIf}
-    MessageBox MB_ICONEXCLAMATION|MB_OK "Please type the pairing code from the QuickPrint dashboard."
+    MessageBox MB_ICONEXCLAMATION|MB_OK "Please type the pairing code from the SeedhaPrint dashboard."
     Abort
   ${EndIf}
 
@@ -159,7 +159,7 @@ Section "Install"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   WriteRegStr HKLM "${UNINSTKEY}" "DisplayName" "${APP}"
   WriteRegStr HKLM "${UNINSTKEY}" "DisplayVersion" "${VERSION}"
-  WriteRegStr HKLM "${UNINSTKEY}" "Publisher" "QuickPrint"
+  WriteRegStr HKLM "${UNINSTKEY}" "Publisher" "SeedhaPrint"
   WriteRegStr HKLM "${UNINSTKEY}" "DisplayIcon" "$INSTDIR\agent.ico"
   WriteRegStr HKLM "${UNINSTKEY}" "InstallLocation" "$INSTDIR"
   WriteRegStr HKLM "${UNINSTKEY}" "UninstallString" '"$INSTDIR\Uninstall.exe"'

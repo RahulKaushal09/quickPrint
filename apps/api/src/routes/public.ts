@@ -5,7 +5,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
-import { LIMITS, quote } from '@quickprint/shared';
+import { LIMITS, quote } from '@seedhaprint/shared';
 import { HttpError } from '../auth';
 import { config, paymentsLive } from '../config';
 import { acceptedTypes, makePrintReady } from '../documents';

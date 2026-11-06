@@ -51,7 +51,7 @@ export default function LoginPage() {
         <Logo className="lg:hidden" />
         <div className="m-auto w-full max-w-sm animate-rise">
           <h2 className="text-3xl font-extrabold tracking-tight">Sign in</h2>
-          <p className="mt-1.5 text-ink-mute">Shop owners and QuickPrint admins.</p>
+          <p className="mt-1.5 text-ink-mute">Shop owners and SeedhaPrint admins.</p>
           <form onSubmit={submit} className="mt-8 space-y-5">
             <Field label="Phone number">
               <Input inputMode="numeric" autoComplete="username" placeholder="10 digit mobile number" value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))} required />
@@ -64,7 +64,7 @@ export default function LoginPage() {
               Sign in <ArrowRight className="size-4" />
             </Button>
           </form>
-          <p className="mt-8 text-center text-sm text-ink-mute">Forgot your password? Call your QuickPrint contact.</p>
+          <p className="mt-8 text-center text-sm text-ink-mute">Forgot your password? Call your SeedhaPrint contact.</p>
         </div>
       </section>
     </main>

@@ -3,7 +3,7 @@
 import { ArrowRight, Camera, Check, FileText, Lock, MapPin, RefreshCw, ShieldCheck, Trash2, Upload, WifiOff } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { quote, type ColorMode } from '@quickprint/shared';
+import { quote, type ColorMode } from '@seedhaprint/shared';
 import { Button, Card, Dot, Mark, Skeleton, Stepper } from '@/components/ui';
 import { api, ApiError, uploadFile } from '@/lib/api';
 import { bytes, cx, initials, plural, rupees } from '@/lib/format';
@@ -363,7 +363,7 @@ function Shell({ children }: { children: React.ReactNode }) {
     <main className="mx-auto min-h-dvh max-w-lg px-5 pb-6 pt-[max(env(safe-area-inset-top),20px)]">
       <div className="mb-5 flex items-center justify-between">
         <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-[0.14em] text-ink-mute">
-          <Mark size={18} /> QuickPrint
+          <Mark size={18} /> SeedhaPrint
         </span>
         <span className="text-xs text-ink-mute">Scan · Upload · Collect</span>
       </div>
