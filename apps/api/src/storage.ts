@@ -7,7 +7,7 @@ import { Readable } from 'node:stream';
 import type { Response } from 'express';
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { config } from './config';
-import { rotatePdf } from './documents';
+import { layoutForPrint } from './documents';
 
 interface Storage {
   put(key: string, data: Buffer, contentType: string): Promise<void>;
@@ -56,14 +56,13 @@ function s3Storage(c: NonNullable<typeof config.s3>): Storage {
   };
 }
 
-/** The file as the printer should get it, with the customer's rotation applied. */
+/** The file as the printer should get it: upright A4 with the customer's rotation applied. */
 export async function sendPrintFile(res: Response, file: { key?: string | null }, rotation: number | null | undefined) {
-  res.setHeader('Content-Type', 'application/pdf');
-  const stream = await storage.stream(file.key!);
-  if (!rotation) return void stream.pipe(res);
   const chunks: Buffer[] = [];
-  for await (const c of stream) chunks.push(c as Buffer);
-  res.end(await rotatePdf(Buffer.concat(chunks), rotation));
+  for await (const c of await storage.stream(file.key!)) chunks.push(c as Buffer);
+  const pdf = await layoutForPrint(Buffer.concat(chunks), rotation ?? 0);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.end(pdf);
 }
 
 export const storage: Storage = config.s3 ? s3Storage(config.s3) : localStorage(config.storageDir);

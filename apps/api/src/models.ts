@@ -112,7 +112,7 @@ const jobSchema = new Schema(
     file: { type: fileSchema, required: true },
     mode: { type: String, enum: ['bw', 'color'], required: true },
     copies: { type: Number, required: true },
-    /** Clockwise turn the customer chose for the whole document. Applied when the file is served for printing. */
+    /** Clockwise turn of the document on the upright A4 sheet. Applied when the file is served for printing. */
     rotation: { type: Number, enum: [0, 90, 180, 270], default: 0 },
     rate: { type: Number, required: true },
     total: { type: Number, required: true },

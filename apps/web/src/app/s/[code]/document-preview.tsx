@@ -8,9 +8,9 @@ import { cx } from '@/lib/format';
 export type Rotation = 0 | 90 | 180 | 270;
 
 /**
- * Shows the document as it will print, so a sideways scan or photo can be
- * turned before paying. Rotation applies to the whole document. If a phone's
- * browser can't draw the preview, the rotate buttons still work.
+ * Shows the document on the upright A4 sheet it prints on. Rotating turns the
+ * document on the paper, never the paper, and applies to every page. If a
+ * phone's browser can't draw the preview, the rotate buttons still work.
  */
 export function DocumentPreview({ jobRef, pages, rotation, onRotate }: { jobRef: string; pages: number; rotation: Rotation; onRotate: (r: Rotation) => void }) {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -60,11 +60,13 @@ export function DocumentPreview({ jobRef, pages, rotation, onRotate }: { jobRef:
 
   return (
     <div className="mt-3 animate-rise overflow-hidden rounded-3xl border border-line bg-surface shadow-card">
-      <div className="paper-grid flex h-72 items-center justify-center bg-paper-2 p-4">
+      <div className="paper-grid flex h-96 items-center justify-center bg-paper-2 p-4">
         {state === 'failed' ? (
           <p className="max-w-56 text-center text-sm text-ink-mute">Preview is not available on this phone. You can still rotate the document below.</p>
         ) : (
-          <canvas ref={canvas} aria-label={`Page ${page} preview`} className={cx('max-h-full max-w-full bg-white shadow-lift ring-1 ring-line transition-opacity', state === 'loading' ? 'opacity-0' : 'opacity-100')} />
+          <div className="flex aspect-[210/297] h-full items-center justify-center overflow-hidden bg-white shadow-lift ring-1 ring-line" aria-label="A4 paper">
+            <canvas ref={canvas} aria-label={`Page ${page} preview`} className={cx('max-h-full max-w-full transition-opacity', state === 'loading' ? 'opacity-0' : 'opacity-100')} />
+          </div>
         )}
       </div>
       <div className="flex items-center justify-between gap-2 border-t border-line px-3 py-2.5">
@@ -75,7 +77,7 @@ export function DocumentPreview({ jobRef, pages, rotation, onRotate }: { jobRef:
           <button type="button" onClick={() => turn(90)} className="grid size-11 place-items-center rounded-xl border border-line-strong transition hover:bg-paper-2 active:scale-95" aria-label="Rotate right">
             <RotateCw className="size-5" />
           </button>
-          <span className="whitespace-nowrap pl-2 text-sm font-semibold text-ink-soft">{rotation ? `${rotation}°` : 'Rotate'}</span>
+          <span className="whitespace-nowrap pl-2 text-sm font-semibold text-ink-soft">{rotation ? `${rotation}°` : 'Rotate on A4'}</span>
         </div>
         {pages > 1 && state !== 'failed' && (
           <div className="flex items-center gap-0.5">

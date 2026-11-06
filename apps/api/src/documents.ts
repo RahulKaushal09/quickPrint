@@ -7,7 +7,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { degrees, PDFDocument } from 'pdf-lib';
+import { degrees, PDFDocument, type PDFPage } from 'pdf-lib';
 import sharp from 'sharp';
 import { LIMITS } from '@seedhaprint/shared';
 import { config } from './config';
@@ -95,11 +95,49 @@ async function officeToPdf(buf: Buffer, name: string): Promise<Buffer> {
   }
 }
 
-/** Turn every page clockwise. Most jobs have no rotation and skip this. */
-export async function rotatePdf(pdf: Buffer, by: number): Promise<Buffer> {
-  const doc = await PDFDocument.load(pdf, { updateMetadata: false });
-  for (const page of doc.getPages()) page.setRotation(degrees((page.getRotation().angle + by) % 360));
-  return Buffer.from(await doc.save());
+/**
+ * The file the printer gets. The sheet is always upright A4 and the customer's
+ * document turns on it, scaled to fit, exactly as the preview shows. Building
+ * upright pages also stops printer drivers turning wide pages by themselves.
+ * Upright documents with no rotation go through untouched.
+ */
+export async function layoutForPrint(pdf: Buffer, rotation: number): Promise<Buffer> {
+  const src = await PDFDocument.load(pdf, { updateMetadata: false });
+  const pages = src.getPages();
+  const angleOf = (p: PDFPage) => (((p.getRotation().angle + rotation) % 360) + 360) % 360;
+  const sideways = (p: PDFPage) => {
+    const { width, height } = p.getCropBox();
+    return angleOf(p) % 180 === 0 ? width > height : height > width;
+  };
+  if (!rotation && !pages.some(sideways)) return pdf;
+
+  // Embedding copies only page content, so filled-in form fields must become content first.
+  try {
+    src.getForm().flatten();
+  } catch {
+    // Some forms can't be flattened. The page itself still prints.
+  }
+  const out = await PDFDocument.create();
+  for (const page of pages) {
+    // Blank pages have no content to embed, but still count as a printed sheet.
+    if (!page.node.Contents()) {
+      out.addPage([A4.w, A4.h]);
+      continue;
+    }
+    const box = page.getCropBox();
+    const embedded = await out.embedPage(page, { left: box.x, bottom: box.y, right: box.x + box.width, top: box.y + box.height });
+    const angle = angleOf(page);
+    const turned = angle % 180 !== 0;
+    const scale = Math.min(A4.w / (turned ? box.height : box.width), A4.h / (turned ? box.width : box.height));
+    const w = box.width * scale;
+    const h = box.height * scale;
+    const x = (A4.w - (turned ? h : w)) / 2;
+    const y = (A4.h - (turned ? w : h)) / 2;
+    // drawPage turns around its lower-left corner, so that corner moves to keep the page inside its box.
+    const anchor = { 0: { x, y }, 90: { x, y: y + w }, 180: { x: x + w, y: y + h }, 270: { x: x + h, y } }[angle as 0 | 90 | 180 | 270];
+    out.addPage([A4.w, A4.h]).drawPage(embedded, { ...anchor, xScale: scale, yScale: scale, rotate: degrees(-angle) });
+  }
+  return Buffer.from(await out.save());
 }
 
 export async function makePrintReady(buf: Buffer, name: string): Promise<PrintReady> {

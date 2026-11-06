@@ -241,7 +241,7 @@ export function CustomerFlow({ code }: { code: string }) {
         </div>
         <span className={cx('inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold', unavailable ? 'bg-paper-2 text-ink-mute' : 'bg-ok-soft text-ok')}>
           <Dot on={!unavailable} pulse />
-          {unavailable ? 'Not available' : 'Ready'}
+          {unavailable === 'offline' ? 'Offline' : unavailable ? 'Closed' : 'Ready'}
         </span>
       </header>
 
