@@ -15,3 +15,8 @@ apps/agent/dev-data
 apps/desktop/build/out
 apps/web/public/downloads/*.exe
 apps/agent/*.syso
+
+# Server-only setup, kept out of git so the server can always pull cleanly
+ecosystem.config.cjs
+.env.production
+apps/agent/build/out
