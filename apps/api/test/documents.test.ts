@@ -74,7 +74,7 @@ test('uploads join into one document', async () => {
 test('a passport photo sheet is the real paper size with every photo on it', async () => {
   const face = await sharp({ create: { width: 900, height: 1200, channels: 3, background: '#d4a373' } }).jpeg().toBuffer();
   const { jpeg } = await normalizePhoto(face);
-  const pdf = await PDFDocument.load(await photoSheet(jpeg, { x: 0.1, y: 0.1, w: 0.8, h: 0.8 }, 0, '4x6', '35x45', 8));
+  const pdf = await PDFDocument.load(await photoSheet(jpeg, { x: 0.1, y: 0.1, w: 0.8, h: 0.8 }, 0, '4x6', '35x45', [8]));
   const page = pdf.getPage(0);
   assert.equal(Math.round((page.getWidth() / 72) * 25.4 * 10) / 10, 101.6);
   assert.equal(Math.round((page.getHeight() / 72) * 25.4 * 10) / 10, 152.4);
@@ -89,4 +89,10 @@ test('both sides by hand: fronts and backs pair up for every copy', async () => 
   assert.deepEqual(await widths(await sideOfJob(pdf, 2, 'front')), [501, 503, 501, 503]);
   assert.deepEqual(await widths(await sideOfJob(pdf, 2, 'back')), [502, 595, 502, 595]);
   assert.deepEqual(await widths(await sideOfJob(pdf, 2, 'back', true)), [595, 502, 595, 502]);
+});
+
+test('10 passport photos on 4x6 paper print as two sheets of 5', async () => {
+  const { jpeg } = await normalizePhoto(await sharp({ create: { width: 900, height: 1200, channels: 3, background: '#d4a373' } }).jpeg().toBuffer());
+  const pdf = await PDFDocument.load(await photoSheet(jpeg, { x: 0.1, y: 0.1, w: 0.8, h: 0.8 }, 0, '4x6', '35x45', [5, 5]));
+  assert.equal(pdf.getPageCount(), 2);
 });

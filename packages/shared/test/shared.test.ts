@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { canMove, photoLayout, photosPerSheet, quote, rupees, sheetsFor } from '../src/index';
+import { canMove, photoLayout, photoSheets, photosPerSheet, quote, rupees, sheetsFor } from '../src/index';
 
 const card = { bwPerPage: 200, colorPerPage: 1000, colorEnabled: true };
 
@@ -51,4 +51,12 @@ test('passport photos: 8 fit on 4x6 paper by turning them sideways, 6 upright', 
   assert.ok(eight.slots.every((s) => s.turned && s.w === 45 && s.h === 35));
   for (const s of eight.slots) assert.ok(s.x >= 3 && s.y >= 3 && s.x + s.w <= 101.6 - 3 && s.y + s.h <= 152.4 - 3);
   assert.ok(photosPerSheet('A4', '35x45') >= 30);
+});
+
+test('photo orders bigger than a sheet split evenly over sheets', () => {
+  assert.deepEqual(photoSheets('4x6', '35x45', 2), [2]);
+  assert.deepEqual(photoSheets('4x6', '35x45', 8), [8]);
+  assert.deepEqual(photoSheets('4x6', '35x45', 10), [5, 5]);
+  assert.deepEqual(photoSheets('4x6', '35x45', 17), [6, 6, 5]);
+  assert.deepEqual(photoSheets('A4', '35x45', 10), [10]);
 });

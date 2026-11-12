@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext } from 'react';
-import type { PhotoPaper, PhotoSize } from '@seedhaprint/shared';
+import type { PhotoPack, PhotoPaper, PhotoSize } from '@seedhaprint/shared';
 import type { Plan, PlanPayment } from '@/lib/plan';
 
 /** The owner's own settings for one printer. sides '' = follow what Windows says. */
@@ -33,7 +33,7 @@ export interface ShopData {
   trays: TrayOrder[];
   printerSettings: PrinterSetting[];
   cash: { enabled: boolean; autoPrint: boolean };
-  photos: { enabled: boolean; size: PhotoSize; paper: PhotoPaper; perSheet: number; price: number };
+  photos: { enabled: boolean; size: PhotoSize; paper: PhotoPaper; packs: PhotoPack[] };
   subscription: { fee: number; paidUntil?: string; payments: PlanPayment[] };
   razorpay: { keyId: string };
 }

@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import { Router } from 'express';
 import mongoose from 'mongoose';
 import { z } from 'zod';
-import { PAID_STATUSES } from '@seedhaprint/shared';
+import { MAX_PHOTO_PACKS, MAX_PHOTOS_PER_ORDER, PAID_STATUSES } from '@seedhaprint/shared';
 import { HttpError, requireShop, requireUser } from '../auth';
 import { config } from '../config';
 import { connectedHere, dispatchShop, ONLINE_WINDOW_MS, refreshPrinters, sendTestPage, type ShopRouting } from '../hub';
@@ -64,12 +64,21 @@ shopRoutes.patch('/', async (req, res) => {
       printerSettings: z
         .array(z.object({ printer: z.string().min(1).max(200), label: z.string().trim().max(40), sides: z.enum(['', 'auto', 'manual', 'off']), reverseBacks: z.boolean() }))
         .max(40),
-      photos: z.object({ enabled: z.boolean(), size: z.enum(['35x45', '51x51']), paper: z.enum(['4x6', 'A4']), perSheet: z.number().int().min(1).max(60), price: paise.min(100) }),
+      photos: z.object({
+        enabled: z.boolean(),
+        size: z.enum(['35x45', '51x51']),
+        paper: z.enum(['4x6', 'A4']),
+        packs: z
+          .array(z.object({ count: z.number().int().min(1).max(MAX_PHOTOS_PER_ORDER), price: paise.min(100), enabled: z.boolean() }))
+          .max(MAX_PHOTO_PACKS)
+          .refine((packs) => new Set(packs.map((p) => p.count)).size === packs.length, 'Each number of photos can be listed once'),
+      }),
       cash: z.object({ enabled: z.boolean(), autoPrint: z.boolean() }),
     })
     .partial()
     .parse(req.body);
   const shop = await myShop(req.shopId!);
+  body.photos?.packs.sort((a, b) => a.count - b.count);
   shop.set(body);
   await shop.save();
   if (body.printers || body.printerSettings || body.accepting) void dispatchShop(shop._id);

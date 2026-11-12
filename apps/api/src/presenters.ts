@@ -14,6 +14,11 @@ export async function shopStatus(shopId: unknown) {
   return { online: printers.length > 0, printers };
 }
 
+/** The photo options customers can pick, smallest first. */
+export function photoPacks(photos: { packs?: { count: number; price: number; enabled?: boolean | null }[] | null }) {
+  return (photos.packs ?? []).filter((p) => p.enabled !== false).map((p) => ({ count: p.count, price: p.price })).sort((a, b) => a.count - b.count);
+}
+
 export const subscriptionOf = (shop: { subscription?: { fee?: number | null; paidUntil?: Date | null } | null }) =>
   subscriptionState(shop.subscription, config.subscriptionGraceDays);
 
@@ -38,9 +43,10 @@ export async function publicShop(shop: ShopDoc) {
     duplex: { bw: shop.rates.duplexEnabled && can('bw', 'double'), color: shop.rates.duplexEnabled && can('color', 'double') },
     payments: shop.razorpay.keyId ? 'razorpay' : config.allowTestCheckout ? 'test' : 'none',
     cash: shop.cash.enabled,
-    photos: shop.photos.enabled
-      ? { size: shop.photos.size, paper: shop.photos.paper, perSheet: shop.photos.perSheet, price: shop.photos.price, available: can('color', 'single', 'photo') }
-      : null,
+    photos:
+      shop.photos.enabled && photoPacks(shop.photos).length
+        ? { size: shop.photos.size, paper: shop.photos.paper, packs: photoPacks(shop.photos), available: can('color', 'single', 'photo') }
+        : null,
   };
 }
 

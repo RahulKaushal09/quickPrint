@@ -2,16 +2,16 @@
 
 import { ArrowRight, Banknote, Camera, CreditCard, ImagePlus, RefreshCw, RotateCw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { PHOTO_PAPERS, PHOTO_SIZES, photoLayout, photosPerSheet, type PaymentMethod, type PhotoPaper, type PhotoSize } from '@seedhaprint/shared';
-import { Button, Card, Stepper } from '@/components/ui';
+import { PHOTO_PAPERS, PHOTO_SIZES, photoLayout, photoSheets, type PaymentMethod, type PhotoPaper, type PhotoSize } from '@seedhaprint/shared';
+import { Button, Card } from '@/components/ui';
 import { API_URL, uploadFile } from '@/lib/api';
 import { cx, plural, rupees } from '@/lib/format';
 
 export interface PhotoSettings {
   size: PhotoSize;
   paper: PhotoPaper;
-  perSheet: number;
-  price: number;
+  /** Options the shop offers, smallest first: this many photos for this total price. */
+  packs: { count: number; price: number }[];
   available: boolean;
 }
 
@@ -23,7 +23,6 @@ interface Props {
   canTakeOrders: boolean;
   online: boolean;
   cash: boolean;
-  maxCopies: number;
   checkout: (ref: string, body: Record<string, unknown>) => Promise<void>;
   paying: boolean;
   payError: string;
@@ -34,9 +33,12 @@ interface Props {
  * Passport photos: take or choose one picture, fit the face in the frame,
  * see the whole sheet exactly as it will print, pay, and it prints.
  */
-export function PhotoMaker({ shopCode, photos, canTakeOrders, online, cash, maxCopies, checkout, paying, payError, OptionCard }: Props) {
+export function PhotoMaker({ shopCode, photos, canTakeOrders, online, cash, checkout, paying, payError, OptionCard }: Props) {
   const size = PHOTO_SIZES[photos.size];
-  const perSheet = Math.min(photos.perSheet, photosPerSheet(photos.paper, photos.size));
+  // Most people want a few: start on the second option when there is one.
+  const [count, setCount] = useState(photos.packs[Math.min(1, photos.packs.length - 1)]?.count ?? 0);
+  const pack = photos.packs.find((p) => p.count === count) ?? photos.packs[0];
+  const sheetCounts = pack ? photoSheets(photos.paper, photos.size, pack.count) : [];
   const [ref, setRef] = useState<string | null>(null);
   const [source, setSource] = useState<HTMLImageElement | null>(null);
   const [turn, setTurn] = useState<Turn>(0);
@@ -46,12 +48,11 @@ export function PhotoMaker({ shopCode, photos, canTakeOrders, online, cash, maxC
   const [frame, setFrame] = useState({ w: 0, h: 0 });
   const [uploading, setUploading] = useState(0);
   const [error, setError] = useState('');
-  const [copies, setCopies] = useState(1);
   const [method, setMethod] = useState<PaymentMethod>(online ? 'online' : 'cash');
   const pick = useRef<HTMLInputElement>(null);
   const camera = useRef<HTMLInputElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
-  const sheet = useRef<HTMLCanvasElement>(null);
+  const sheetRefs = useRef<(HTMLCanvasElement | null)[]>([]);
   const drag = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
 
   async function upload(file: File | undefined) {
@@ -119,37 +120,40 @@ export function PhotoMaker({ shopCode, photos, canTakeOrders, online, cash, maxC
     ? { x: -offset.x / (picture.width * scale), y: -offset.y / (picture.height * scale), w: frame.w / (picture.width * scale), h: frame.h / (picture.height * scale) }
     : null;
 
-  // The whole sheet, drawn with the same layout the print file uses.
+  // Every sheet, drawn with the same layout the print file uses.
   useEffect(() => {
-    const c = sheet.current;
-    if (!c || !picture || !crop) return;
-    const layout = photoLayout(photos.paper, photos.size, perSheet);
-    const px = 3.2; // canvas pixels per millimetre
-    c.width = Math.round(layout.page.w * px);
-    c.height = Math.round(layout.page.h * px);
-    const g = c.getContext('2d')!;
-    g.fillStyle = '#fff';
-    g.fillRect(0, 0, c.width, c.height);
-    const sx = crop.x * picture.width;
-    const sy = crop.y * picture.height;
-    const sw = crop.w * picture.width;
-    const sh = crop.h * picture.height;
-    for (const s of layout.slots) {
-      g.save();
-      g.translate(s.x * px, s.y * px);
-      if (s.turned) {
-        g.translate(s.w * px, 0);
-        g.rotate(Math.PI / 2);
-        g.drawImage(picture, sx, sy, sw, sh, 0, 0, s.h * px, s.w * px);
-      } else {
-        g.drawImage(picture, sx, sy, sw, sh, 0, 0, s.w * px, s.h * px);
+    if (!picture || !crop) return;
+    sheetCounts.forEach((n, i) => {
+      const c = sheetRefs.current[i];
+      if (!c) return;
+      const layout = photoLayout(photos.paper, photos.size, n);
+      const px = 3.2; // canvas pixels per millimetre
+      c.width = Math.round(layout.page.w * px);
+      c.height = Math.round(layout.page.h * px);
+      const g = c.getContext('2d')!;
+      g.fillStyle = '#fff';
+      g.fillRect(0, 0, c.width, c.height);
+      const sx = crop.x * picture.width;
+      const sy = crop.y * picture.height;
+      const sw = crop.w * picture.width;
+      const sh = crop.h * picture.height;
+      for (const s of layout.slots) {
+        g.save();
+        g.translate(s.x * px, s.y * px);
+        if (s.turned) {
+          g.translate(s.w * px, 0);
+          g.rotate(Math.PI / 2);
+          g.drawImage(picture, sx, sy, sw, sh, 0, 0, s.h * px, s.w * px);
+        } else {
+          g.drawImage(picture, sx, sy, sw, sh, 0, 0, s.w * px, s.h * px);
+        }
+        g.restore();
+        g.strokeStyle = '#d1d1d1';
+        g.lineWidth = 1;
+        g.strokeRect(s.x * px - 0.5, s.y * px - 0.5, s.w * px + 1, s.h * px + 1);
       }
-      g.restore();
-      g.strokeStyle = '#d1d1d1';
-      g.lineWidth = 1;
-      g.strokeRect(s.x * px - 0.5, s.y * px - 0.5, s.w * px + 1, s.h * px + 1);
-    }
-  }, [picture, crop?.x, crop?.y, crop?.w, crop?.h, photos.paper, photos.size, perSheet]); // eslint-disable-line react-hooks/exhaustive-deps
+    });
+  }, [picture, crop?.x, crop?.y, crop?.w, crop?.h, photos.paper, photos.size, sheetCounts.join()]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function onPointerDown(e: React.PointerEvent) {
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
@@ -169,8 +173,8 @@ export function PhotoMaker({ shopCode, photos, canTakeOrders, online, cash, maxC
     setOffset({ x: frame.w / 2 - cx0 * next, y: frame.h / 2 - cy0 * next });
   }
 
-  const total = Math.max(100, photos.price * copies);
-  const canPay = Boolean(ref && crop && canTakeOrders && photos.available && (method === 'cash' ? cash : online));
+  const total = Math.max(100, pack?.price ?? 0);
+  const canPay = Boolean(ref && crop && pack && canTakeOrders && photos.available && (method === 'cash' ? cash : online));
 
   return (
     <>
@@ -241,20 +245,42 @@ export function PhotoMaker({ shopCode, photos, canTakeOrders, online, cash, maxC
           </section>
 
           <section className="mt-8">
-            <h2 className="text-[0.95rem] font-bold">Your sheet</h2>
-            <p className="text-sm text-ink-mute">
-              {plural(perSheet, 'photo')} of {size.w} × {size.h} mm on {PHOTO_PAPERS[photos.paper].label}
-            </p>
-            <div className="mt-3 flex justify-center rounded-3xl bg-paper-2 p-5">
-              <canvas ref={sheet} className="max-h-96 w-auto max-w-full bg-white shadow-lift ring-1 ring-line" aria-label="Photo sheet preview" />
+            <h2 className="text-[0.95rem] font-bold">How many photos?</h2>
+            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {photos.packs.map((p) => (
+                <button
+                  key={p.count}
+                  type="button"
+                  onClick={() => setCount(p.count)}
+                  aria-pressed={p.count === pack?.count}
+                  className={cx('rounded-2xl border-2 bg-surface px-4 py-3 text-left transition active:scale-[0.98]', p.count === pack?.count ? 'border-ink shadow-lift' : 'border-line hover:border-line-strong')}
+                >
+                  <span className="block text-2xl font-extrabold tabular">{p.count}</span>
+                  <span className="block text-sm text-ink-mute">photos</span>
+                  <span className="mt-1 block font-mono font-bold">{rupees(p.price)}</span>
+                </button>
+              ))}
             </div>
-            <Card className="mt-3 flex items-center justify-between p-4 pl-5">
-              <div>
-                <p className="font-bold">Sheets</p>
-                <p className="text-sm text-ink-mute">{rupees(photos.price)} per sheet</p>
-              </div>
-              <Stepper value={copies} onChange={setCopies} max={Math.min(10, maxCopies)} />
-            </Card>
+          </section>
+
+          <section className="mt-8">
+            <h2 className="text-[0.95rem] font-bold">{sheetCounts.length > 1 ? 'Your sheets' : 'Your sheet'}</h2>
+            <p className="text-sm text-ink-mute">
+              {plural(pack?.count ?? 0, 'photo')} of {size.w} × {size.h} mm on {sheetCounts.length > 1 ? `${sheetCounts.length} sheets of ` : ''}
+              {PHOTO_PAPERS[photos.paper].label}
+            </p>
+            <div className="mt-3 flex flex-wrap justify-center gap-4 rounded-3xl bg-paper-2 p-5">
+              {sheetCounts.map((n, i) => (
+                <canvas
+                  key={`${sheetCounts.length}-${i}`}
+                  ref={(el) => {
+                    sheetRefs.current[i] = el;
+                  }}
+                  className={cx('w-auto max-w-full bg-white shadow-lift ring-1 ring-line', sheetCounts.length > 1 ? 'max-h-72' : 'max-h-96')}
+                  aria-label={`Sheet ${i + 1} preview, ${n} photos`}
+                />
+              ))}
+            </div>
           </section>
 
           {cash && online && (
@@ -282,7 +308,7 @@ export function PhotoMaker({ shopCode, photos, canTakeOrders, online, cash, maxC
             className={cx('w-full')}
             disabled={!canPay}
             loading={paying}
-            onClick={() => ref && crop && checkout(ref, { method, copies, turn, crop: { x: clampUnit(crop.x), y: clampUnit(crop.y), w: clampUnit(crop.w), h: clampUnit(crop.h) } })}
+            onClick={() => ref && crop && pack && checkout(ref, { method, copies: 1, count: pack.count, turn, crop: { x: clampUnit(crop.x), y: clampUnit(crop.y), w: clampUnit(crop.w), h: clampUnit(crop.h) } })}
           >
             {!ref ? (
               'Take or choose a photo'

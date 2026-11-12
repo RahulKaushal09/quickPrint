@@ -64,3 +64,30 @@ export function photoLayout(paper: PhotoPaper, size: PhotoSize, count: number): 
   }
   return { page: { w: p.w, h: p.h }, slots };
 }
+
+/** One option the customer can pick: this many photos for this total price (paise). */
+export interface PhotoPack {
+  count: number;
+  price: number;
+  enabled: boolean;
+}
+
+export const MAX_PHOTO_PACKS = 12;
+export const MAX_PHOTOS_PER_ORDER = 60;
+
+export const DEFAULT_PHOTO_PACKS: PhotoPack[] = [
+  { count: 2, price: 2000, enabled: true },
+  { count: 4, price: 2000, enabled: true },
+  { count: 8, price: 4000, enabled: true },
+  { count: 10, price: 5000, enabled: true },
+];
+
+/**
+ * How many photos go on each sheet for an order of `count`. More than one
+ * sheet holds are split evenly, so 10 on 4x6 paper (8 fit) prints 5 and 5.
+ */
+export function photoSheets(paper: PhotoPaper, size: PhotoSize, count: number): number[] {
+  const fits = Math.max(1, photosPerSheet(paper, size));
+  const sheets = Math.max(1, Math.ceil(count / fits));
+  return Array.from({ length: sheets }, (_, i) => Math.floor(count / sheets) + (i < count % sheets ? 1 : 0));
+}

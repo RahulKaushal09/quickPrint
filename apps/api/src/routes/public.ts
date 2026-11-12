@@ -5,7 +5,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
-import { LIMITS, photosPerSheet, quote, type PhotoPaper, type PhotoSize } from '@seedhaprint/shared';
+import { LIMITS, photoSheets, quote, type PhotoPaper, type PhotoSize } from '@seedhaprint/shared';
 import { HttpError } from '../auth';
 import { config } from '../config';
 import { acceptedTypes, appendPdf, makePrintReady, normalizePhoto, photoSheet } from '../documents';
@@ -13,7 +13,7 @@ import { dispatchShop } from '../hub';
 import { markPaid, newJobRef, randomCode, transition } from '../jobs';
 import { Job, Shop } from '../models';
 import { checkoutSignatureValid, confirmPayment, createOrder, RazorpayError, shopKeys } from '../payments';
-import { publicJob, publicShop, shopCanSell } from '../presenters';
+import { photoPacks, publicJob, publicShop, shopCanSell } from '../presenters';
 import { readAll, storage } from '../storage';
 
 export const publicRoutes = Router();
@@ -77,7 +77,8 @@ publicRoutes.post('/shops/:code/uploads', uploadLimit, upload.single('file'), as
 /** Passport photos: one picture, cropped and laid out at checkout. */
 publicRoutes.post('/shops/:code/photo', uploadLimit, upload.single('file'), async (req, res) => {
   const shop = await shopByCode(String(req.params.code));
-  if (!shop.accepting || !shop.photos.enabled) throw new HttpError(409, 'This shop is not making passport photos right now');
+  const cheapest = photoPacks(shop.photos)[0];
+  if (!shop.accepting || !shop.photos.enabled || !cheapest) throw new HttpError(409, 'This shop is not making passport photos right now');
   if (!req.file) throw new HttpError(400, 'Choose or take a photo');
   const { jpeg } = await normalizePhoto(req.file.buffer);
   const ref = newJobRef();
@@ -91,8 +92,9 @@ publicRoutes.post('/shops/:code/photo', uploadLimit, upload.single('file'), asyn
     file: { key, sourceKey: key, name: 'Passport photos', bytes: jpeg.length, pages: 1 },
     mode: 'color',
     copies: 1,
-    rate: shop.photos.price,
-    total: shop.photos.price,
+    // Priced for real at checkout, once the customer picks how many.
+    rate: cheapest.price,
+    total: cheapest.price,
     events: [{ status: 'draft', note: 'Photo uploaded' }],
   });
   res.status(201).json(publicJob(job));
@@ -153,16 +155,30 @@ publicRoutes.post('/jobs/:ref/checkout', async (req, res) => {
   if (job.kind === 'photo') {
     if (!status.photos) throw new HttpError(409, 'This shop is not making passport photos right now');
     if (!status.photos.available) throw new HttpError(409, 'The photo printer is offline right now. Please ask at the counter.');
-    const body = z.object({ turn: turnSchema.default(0), crop: z.object({ x: fraction, y: fraction, w: fraction, h: fraction }) }).parse(req.body);
+    const body = z.object({ count: z.number().int().min(1), turn: turnSchema.default(0), crop: z.object({ x: fraction, y: fraction, w: fraction, h: fraction }) }).parse(req.body);
+    const pack = photoPacks(shop.photos).find((p) => p.count === body.count);
+    if (!pack) throw new HttpError(400, 'That number of photos is not available. Please choose again.');
     const paper = shop.photos.paper as PhotoPaper;
     const size = shop.photos.size as PhotoSize;
-    const perSheet = Math.min(shop.photos.perSheet, photosPerSheet(paper, size));
-    const sheet = await photoSheet(await readAll(job.file.sourceKey!), body.crop, body.turn, paper, size, perSheet);
+    const sheets = photoSheets(paper, size, pack.count);
+    const pdf = await photoSheet(await readAll(job.file.sourceKey!), body.crop, body.turn, paper, size, sheets);
     const key = `jobs/${shop.code}/${job.ref}.pdf`;
-    await storage.put(key, sheet, 'application/pdf');
-    total = Math.max(LIMITS.minTotal, shop.photos.price * base.copies);
-    description = `Passport photos · ${base.copies} sheet${base.copies > 1 ? 's' : ''} of ${perSheet}`;
-    options = { 'file.key': key, 'file.bytes': sheet.length, photo: { size, paper, perSheet }, mode: 'color', sides: 'single', copies: base.copies, pageList: [], printPages: 1, rate: shop.photos.price, total };
+    await storage.put(key, pdf, 'application/pdf');
+    total = Math.max(LIMITS.minTotal, pack.price);
+    description = `Passport photos · ${pack.count} photos`;
+    options = {
+      'file.key': key,
+      'file.bytes': pdf.length,
+      'file.pages': sheets.length,
+      photo: { size, paper, count: pack.count, sheets, perSheet: Math.max(...sheets) },
+      mode: 'color',
+      sides: 'single',
+      copies: 1,
+      pageList: [],
+      printPages: sheets.length,
+      rate: pack.price,
+      total,
+    };
   } else {
     const body = z
       .object({

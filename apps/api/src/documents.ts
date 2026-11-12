@@ -214,8 +214,11 @@ export interface Crop {
 
 const MM = 72 / 25.4;
 
-/** A sheet of passport photos at their exact size, with light marks to cut along. */
-export async function photoSheet(source: Buffer, crop: Crop, turn: number, paper: PhotoPaper, size: PhotoSize, count: number): Promise<Buffer> {
+/**
+ * Sheets of passport photos at their exact size, with light marks to cut along.
+ * `sheets` is how many photos go on each page, e.g. [5, 5] for 10 on 4x6 paper.
+ */
+export async function photoSheet(source: Buffer, crop: Crop, turn: number, paper: PhotoPaper, size: PhotoSize, sheets: number[]): Promise<Buffer> {
   const turned = sharp(source).rotate(turn);
   const meta = await sharp(await turned.clone().toBuffer()).metadata();
   const W = meta.width!;
@@ -223,8 +226,8 @@ export async function photoSheet(source: Buffer, crop: Crop, turn: number, paper
   const clamp = (v: number, max: number) => Math.min(Math.max(0, Math.round(v)), max);
   const left = clamp(crop.x * W, W - 1);
   const top = clamp(crop.y * H, H - 1);
-  const layout = photoLayout(paper, size, count);
-  const slot = layout.slots[0]!;
+  // The photo is cut once, upright; a sideways slot on any sheet just turns it.
+  const slot = photoLayout(paper, size, sheets[0]!).slots[0]!;
   const [pw, ph] = slot.turned ? [slot.h, slot.w] : [slot.w, slot.h];
   // 600 dpi is sharp for photo paper and keeps the file small.
   const photo = await turned
@@ -234,18 +237,21 @@ export async function photoSheet(source: Buffer, crop: Crop, turn: number, paper
     .toBuffer();
 
   const doc = await PDFDocument.create();
-  const page = doc.addPage([layout.page.w * MM, layout.page.h * MM]);
   const image = await doc.embedJpg(photo);
   const guide = rgb(0.82, 0.82, 0.82);
-  for (const s of layout.slots) {
-    const x = s.x * MM;
-    const y = (layout.page.h - s.y - s.h) * MM; // PDF measures from the bottom
-    page.drawRectangle({ x: x - 0.4, y: y - 0.4, width: s.w * MM + 0.8, height: s.h * MM + 0.8, borderColor: guide, borderWidth: 0.4 });
-    if (s.turned) {
-      // Upright photo turned a quarter clockwise, so it fills the sideways slot.
-      page.drawImage(image, { x, y: y + s.h * MM, width: s.h * MM, height: s.w * MM, rotate: degrees(-90) });
-    } else {
-      page.drawImage(image, { x, y, width: s.w * MM, height: s.h * MM });
+  for (const count of sheets) {
+    const layout = photoLayout(paper, size, count);
+    const page = doc.addPage([layout.page.w * MM, layout.page.h * MM]);
+    for (const s of layout.slots) {
+      const x = s.x * MM;
+      const y = (layout.page.h - s.y - s.h) * MM; // PDF measures from the bottom
+      page.drawRectangle({ x: x - 0.4, y: y - 0.4, width: s.w * MM + 0.8, height: s.h * MM + 0.8, borderColor: guide, borderWidth: 0.4 });
+      if (s.turned) {
+        // Upright photo turned a quarter clockwise, so it fills the sideways slot.
+        page.drawImage(image, { x, y: y + s.h * MM, width: s.h * MM, height: s.w * MM, rotate: degrees(-90) });
+      } else {
+        page.drawImage(image, { x, y, width: s.w * MM, height: s.h * MM });
+      }
     }
   }
   return Buffer.from(await doc.save());

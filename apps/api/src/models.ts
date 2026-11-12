@@ -1,5 +1,5 @@
 import mongoose, { Schema, type InferSchemaType, type HydratedDocument } from 'mongoose';
-import { JOB_STATUSES } from '@seedhaprint/shared';
+import { DEFAULT_PHOTO_PACKS, JOB_STATUSES } from '@seedhaprint/shared';
 
 // ---------------------------------------------------------------- Shop
 // One row per print shop. `code` is what the QR points at: WEB_URL/s/<code>.
@@ -46,9 +46,14 @@ const photosSchema = new Schema(
     enabled: { type: Boolean, required: true, default: false },
     size: { type: String, enum: ['35x45', '51x51'], required: true, default: '35x45' },
     paper: { type: String, enum: ['4x6', 'A4'], required: true, default: '4x6' },
-    perSheet: { type: Number, required: true, default: 8 },
-    /** Paise for one sheet of photos. */
-    price: { type: Number, required: true, default: 5000 },
+    /** Before packs: photos on each sheet and paise per sheet. Kept for old records. */
+    perSheet: { type: Number, default: 8 },
+    price: { type: Number, default: 5000 },
+    /** What customers can pick: this many photos for this total price (paise). */
+    packs: {
+      type: [{ _id: false, count: { type: Number, required: true }, price: { type: Number, required: true }, enabled: { type: Boolean, default: true } }],
+      default: () => DEFAULT_PHOTO_PACKS.map((p) => ({ ...p })),
+    },
   },
   sub,
 );
@@ -192,7 +197,8 @@ const jobSchema = new Schema(
     mode: { type: String, enum: ['bw', 'color'], required: true },
     copies: { type: Number, required: true },
     kind: { type: String, enum: ['document', 'photo'], default: 'document' },
-    photo: { _id: false, size: String, paper: String, perSheet: Number },
+    /** count: photos ordered; sheets: photos on each printed sheet. perSheet is from before packs. */
+    photo: { _id: false, size: String, paper: String, perSheet: Number, count: Number, sheets: [Number] },
     sides: { type: String, enum: ['single', 'double'], default: 'single' },
     /** Chosen pages in print order, each with its turn on the upright A4 sheet. Empty = every page as uploaded. */
     pageList: [{ _id: false, p: Number, r: Number }],

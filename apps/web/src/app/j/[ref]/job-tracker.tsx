@@ -15,7 +15,7 @@ interface Job {
   file: { name: string; pages: number };
   mode: 'bw' | 'color';
   kind: 'document' | 'photo';
-  photo?: { perSheet: number };
+  photo?: { perSheet: number; count?: number; sheets?: number[] };
   sides: Sides;
   cash: boolean;
   copies: number;
@@ -178,7 +178,9 @@ export function JobTracker({ jobRef }: { jobRef: string }) {
             <p className="truncate font-semibold">{job.file.name}</p>
             <p className="text-ink-mute">
               {job.kind === 'photo'
-                ? `${plural(job.copies, 'sheet')} of ${job.photo?.perSheet ?? ''} photos`
+                ? job.photo?.count
+                  ? `${plural(job.photo.count, 'photo')} on ${plural(job.photo.sheets?.length ?? 1, 'sheet')}`
+                  : `${plural(job.copies, 'sheet')} of ${job.photo?.perSheet ?? ''} photos`
                 : `${plural(job.file.pages, 'page')} × ${plural(job.copies, 'copy', 'copies')} · ${job.mode === 'color' ? 'Colour' : 'Black & white'} · ${job.sides === 'double' ? `Both sides, ${plural(sheetsFor(job.file.pages, 'double') * job.copies, 'sheet')}` : 'Single side'}`}
             </p>
           </div>

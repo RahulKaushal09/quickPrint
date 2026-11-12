@@ -17,7 +17,7 @@ export interface ShopJob {
   mode: 'bw' | 'color';
   sides: 'single' | 'double';
   kind: 'document' | 'photo';
-  photo?: { perSheet: number; paper: string };
+  photo?: { perSheet: number; paper: string; count?: number; sheets?: number[] };
   waiting?: string;
   cash: boolean;
   copies: number;
@@ -88,7 +88,7 @@ function JobRow({ job, onChange, compact }: { job: ShopJob; onChange: (j: ShopJo
           {job.mockPayment && <Badge className="shrink-0">Test</Badge>}
         </div>
         <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-sm text-ink-mute">
-          <span>{job.kind === 'photo' ? `${job.photo?.perSheet} per sheet × ${job.copies}` : `${plural(job.file.pages, 'page')} × ${job.copies}`}</span>
+          <span>{job.kind === 'photo' ? (job.photo?.count ? `${plural(job.photo.count, 'photo')} · ${plural(job.photo.sheets?.length ?? 1, 'sheet')}` : `${job.photo?.perSheet} per sheet × ${job.copies}`) : `${plural(job.file.pages, 'page')} × ${job.copies}`}</span>
           <span className={cx('inline-flex items-center gap-1 font-semibold', job.mode === 'color' ? 'text-magenta' : 'text-ink-soft')}>
             <span className={cx('size-2 rounded-full', job.mode === 'color' ? 'bg-[conic-gradient(#00a3e0,#e5007d,#ffd200,#00a3e0)]' : 'bg-ink')} />
             {job.mode === 'color' ? 'Colour' : 'B/W'}

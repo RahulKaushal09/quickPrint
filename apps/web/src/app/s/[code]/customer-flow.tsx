@@ -299,7 +299,6 @@ export function CustomerFlow({ code }: { code: string }) {
           canTakeOrders={Boolean(shop.open && shop.online)}
           online={online}
           cash={shop.cash}
-          maxCopies={cfg.limits.maxCopies}
           checkout={checkout}
           paying={paying}
           payError={payError}
