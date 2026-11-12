@@ -1,11 +1,18 @@
 'use client';
 
-import { ArrowLeft, LogOut, type LucideIcon } from 'lucide-react';
+import { ArrowLeft, LogOut, MessageCircle, type LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Logo, ToastProvider } from '@/components/ui';
 import { session } from '@/lib/api';
 import { cx, initials } from '@/lib/format';
+
+export interface Notice {
+  tone: 'warn' | 'grace' | 'bad';
+  title: string;
+  text: string;
+  action?: { label: string; href: string };
+}
 
 export interface NavItem {
   href: string;
@@ -20,6 +27,7 @@ export function AppShell({
   subtitle,
   user,
   banner,
+  notice,
   children,
 }: {
   nav: NavItem[];
@@ -27,6 +35,8 @@ export function AppShell({
   subtitle?: string;
   user?: { name: string; phone: string } | null;
   banner?: { text: string; onExit: () => void } | null;
+  /** A message the shop must not miss, e.g. its subscription has ended. */
+  notice?: Notice | null;
   children: React.ReactNode;
 }) {
   const path = usePathname();
@@ -91,6 +101,36 @@ export function AppShell({
             <button onClick={banner.onExit} className="inline-flex shrink-0 items-center gap-1 underline-offset-2 hover:underline">
               <ArrowLeft className="size-4" /> Back to admin
             </button>
+          </div>
+        )}
+
+        {notice && (
+          <div
+            role={notice.tone === 'bad' ? 'alert' : 'status'}
+            className={cx(
+              'flex flex-col gap-3 px-5 py-3 sm:flex-row sm:items-center sm:justify-between lg:px-10',
+              notice.tone === 'warn' && 'bg-yellow-soft text-ink',
+              notice.tone === 'grace' && 'bg-warn-soft text-ink',
+              notice.tone === 'bad' && 'bg-bad text-white',
+            )}
+          >
+            <div className="text-sm">
+              <p className="font-bold">{notice.title}</p>
+              <p className={notice.tone === 'bad' ? 'text-white/85' : 'text-ink-soft'}>{notice.text}</p>
+            </div>
+            {notice.action && (
+              <a
+                href={notice.action.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cx(
+                  'inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl px-4 text-sm font-bold transition',
+                  notice.tone === 'bad' ? 'bg-white text-bad hover:bg-white/90' : 'bg-ink text-white hover:bg-ink-2',
+                )}
+              >
+                <MessageCircle className="size-4" /> {notice.action.label}
+              </a>
+            )}
           </div>
         )}
 

@@ -11,7 +11,7 @@ import { connectedHere, dispatchShop, ONLINE_WINDOW_MS, sendTestPage } from '../
 import { randomCode, refundJob, transition } from '../jobs';
 import { Device, Job, PairCode, Shop, User } from '../models';
 import { RazorpayError, verifyKeys } from '../payments';
-import { shopJob } from '../presenters';
+import { shopJob, subscriptionOf } from '../presenters';
 import { decrypt, encrypt } from '../secrets';
 import { sendPrintFile } from '../storage';
 
@@ -39,7 +39,13 @@ function devicePublic(d: any) {
 shopRoutes.get('/', async (req, res) => {
   const shop = await myShop(req.shopId!);
   const user = await User.findById(req.session!.userId).select('name phone role').lean();
-  res.json({ shop, user, qrUrl: `${config.webUrl}/s/${shop.code}` });
+  const s = subscriptionOf(shop);
+  res.json({
+    shop,
+    user,
+    qrUrl: `${config.webUrl}/s/${shop.code}`,
+    subscription: { state: s.state, fee: s.fee, paidUntil: s.paidUntil, graceUntil: s.graceUntil, daysLeft: s.daysLeft },
+  });
 });
 
 shopRoutes.patch('/', async (req, res) => {

@@ -3,6 +3,7 @@
 
 import type { AgentPrinter } from '@seedhaprint/shared';
 import { config } from './config';
+import { subscriptionState } from './subscription';
 import { ONLINE_WINDOW_MS, printerFits } from './hub';
 import { Device, type JobDoc, type ShopDoc } from './models';
 
@@ -12,6 +13,13 @@ export async function shopStatus(shopId: unknown) {
   const printers = devices.flatMap((d) => d.printers ?? []).filter((p) => p.status !== 'offline') as AgentPrinter[];
   return { online: printers.length > 0, printers };
 }
+
+export const subscriptionOf = (shop: { subscription?: { fee?: number | null; paidUntil?: Date | null } | null }) =>
+  subscriptionState(shop.subscription, config.subscriptionGraceDays);
+
+/** Whether customers can order from this shop at all: switched on by admin and subscription not ended. */
+export const shopCanSell = (shop: { active?: boolean | null; subscription?: { fee?: number | null; paidUntil?: Date | null } | null }) =>
+  Boolean(shop.active) && subscriptionOf(shop).state !== 'off';
 
 export async function publicShop(shop: ShopDoc) {
   const { online, printers } = await shopStatus(shop._id);
@@ -23,7 +31,7 @@ export async function publicShop(shop: ShopDoc) {
     city: shop.city,
     phone: shop.phone,
     rates: shop.rates,
-    open: shop.active && shop.accepting,
+    open: shopCanSell(shop) && shop.accepting,
     online,
     /** Whether each kind of print has a working printer right now. */
     available: { bw: can('bw', 'single'), color: can('color', 'single') },

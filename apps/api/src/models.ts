@@ -59,6 +59,28 @@ const razorpaySchema = new Schema(
   sub,
 );
 
+/** What the shop pays SeedhaPrint. Fee 0 = free, never switches off (see subscription.ts). */
+const subscriptionSchema = new Schema(
+  {
+    fee: { type: Number, required: true, default: 0 },
+    paidUntil: Date,
+    payments: [
+      {
+        _id: false,
+        at: { type: Date, default: Date.now },
+        amount: Number,
+        months: Number,
+        method: { type: String, enum: ['upi', 'cash', 'bank', 'other'] },
+        note: String,
+        /** The new paid-until date this payment gave. */
+        until: Date,
+        by: { type: Schema.Types.ObjectId, ref: 'User' },
+      },
+    ],
+  },
+  sub,
+);
+
 const shopSchema = new Schema(
   {
     code: { type: String, required: true, unique: true },
@@ -74,6 +96,7 @@ const shopSchema = new Schema(
     cash: { type: cashSchema, default: () => ({}) },
     trays: { type: [traySchema], default: [] },
     photos: { type: photosSchema, default: () => ({}) },
+    subscription: { type: subscriptionSchema, default: () => ({}) },
   },
   { timestamps: true },
 );

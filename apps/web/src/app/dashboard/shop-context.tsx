@@ -2,6 +2,7 @@
 
 import { createContext, useContext } from 'react';
 import type { PhotoPaper, PhotoSize } from '@seedhaprint/shared';
+import type { Plan, PlanPayment } from '@/lib/plan';
 
 /** A printer's trays in order of preference. */
 export interface TrayOrder {
@@ -24,6 +25,7 @@ export interface ShopData {
   trays: TrayOrder[];
   cash: { enabled: boolean; autoPrint: boolean };
   photos: { enabled: boolean; size: PhotoSize; paper: PhotoPaper; perSheet: number; price: number };
+  subscription: { fee: number; paidUntil?: string; payments: PlanPayment[] };
   razorpay: { keyId: string };
 }
 
@@ -31,6 +33,7 @@ export interface ShopCtx {
   shop: ShopData;
   user: { name: string; phone: string; role: 'admin' | 'owner' };
   qrUrl: string;
+  subscription: Plan;
   setShop: (s: ShopData) => void;
 }
 

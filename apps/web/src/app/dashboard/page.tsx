@@ -23,7 +23,7 @@ function greeting() {
 }
 
 export default function OverviewPage() {
-  const { shop, user, setShop } = useShop();
+  const { shop, user, setShop, subscription } = useShop();
   const toast = useToast();
   const [data, setData] = useState<Overview | null>(null);
   const [jobs, setJobs] = useState<ShopJob[] | null>(null);
@@ -87,7 +87,7 @@ export default function OverviewPage() {
           <Card className="flex items-center gap-3 px-4 py-2.5">
             <div className="text-right">
               <p className="text-sm font-bold">{shop.accepting ? 'Taking orders' : 'Orders paused'}</p>
-              <p className="text-xs text-ink-mute">{shop.accepting ? 'Customers can scan & pay' : 'QR shows shop as closed'}</p>
+              <p className="text-xs text-ink-mute">{subscription.state === 'off' ? 'Plan ended: QR is unavailable' : shop.accepting ? 'Customers can scan & pay' : 'QR shows shop as closed'}</p>
             </div>
             <Switch checked={shop.accepting} onChange={toggleAccepting} disabled={saving} label="Taking orders" />
           </Card>

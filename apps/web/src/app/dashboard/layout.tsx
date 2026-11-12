@@ -3,10 +3,38 @@
 import { CreditCard, LayoutGrid, ListChecks, Printer, QrCode, Settings } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { AppShell } from '@/components/app-shell';
+import { AppShell, type Notice } from '@/components/app-shell';
 import { Mark, Spinner } from '@/components/ui';
 import { api, session } from '@/lib/api';
+import { rupees } from '@/lib/format';
+import { planDate, type Plan } from '@/lib/plan';
+import { whatsappLink } from '@/lib/site';
 import { ShopContext, type ShopCtx } from './shop-context';
+
+/** What the owner sees about their SeedhaPrint subscription, if anything needs saying. */
+function planNotice(plan: Plan, shopName: string): Notice | null {
+  const pay = { label: 'Renew on WhatsApp', href: whatsappLink(`Hi, I want to renew SeedhaPrint for ${shopName}.`) };
+  switch (plan.state) {
+    case 'due_soon':
+      return { tone: 'warn', title: `Your plan renews on ${planDate(plan.paidUntil)}`, text: `${rupees(plan.fee)} a month. Renew before then to keep taking orders.`, action: pay };
+    case 'grace':
+      return {
+        tone: 'grace',
+        title: `Your plan ended on ${planDate(plan.paidUntil)}`,
+        text: `Customers can still order until ${planDate(plan.graceUntil)}. Renew to avoid being switched off.`,
+        action: pay,
+      };
+    case 'off':
+      return {
+        tone: 'bad',
+        title: 'Your plan has ended, customers can’t order',
+        text: 'Your QR shows the shop as unavailable. Jobs already paid still print. Renew and it switches back on straight away.',
+        action: pay,
+      };
+    default:
+      return null;
+  }
+}
 
 const NAV = [
   { href: '/dashboard', label: 'Overview', icon: LayoutGrid },
@@ -67,6 +95,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         title={ctx.shop.name}
         subtitle={[ctx.shop.area, ctx.shop.city].filter(Boolean).join(', ') || `Shop ${ctx.shop.code}`}
         user={ctx.user}
+        notice={planNotice(ctx.subscription, ctx.shop.name)}
         banner={
           viewingAsAdmin
             ? {

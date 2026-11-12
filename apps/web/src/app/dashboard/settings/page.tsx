@@ -3,7 +3,10 @@
 import { useState } from 'react';
 import { PHOTO_PAPERS, PHOTO_SIZES, photosPerSheet, type PhotoPaper, type PhotoSize } from '@seedhaprint/shared';
 import { PageHeader } from '@/components/app-shell';
-import { Button, Card, Field, Input, Select, Switch, useToast } from '@/components/ui';
+import { MessageCircle } from 'lucide-react';
+import { Badge, Button, Card, Field, Input, Select, Switch, useToast } from '@/components/ui';
+import { METHOD_LABEL, PLAN_LABEL, PLAN_TONE, planDate } from '@/lib/plan';
+import { whatsappLink } from '@/lib/site';
 import { api } from '@/lib/api';
 import { rupees } from '@/lib/format';
 import { useShop } from '../shop-context';
@@ -12,7 +15,7 @@ const toRupees = (p: number) => String(p / 100);
 const toPaise = (r: string) => Math.round(parseFloat(r || '0') * 100);
 
 export default function SettingsPage() {
-  const { shop, setShop } = useShop();
+  const { shop, setShop, subscription } = useShop();
   const toast = useToast();
   const [form, setForm] = useState({
     name: shop.name,
@@ -156,6 +159,45 @@ export default function SettingsPage() {
                 <Input prefix="₹" inputMode="decimal" value={form.photoPrice} onChange={(e) => setForm({ ...form, photoPrice: e.target.value })} />
               </Field>
             </div>
+          )}
+        </Card>
+
+        <Card className="p-5 sm:p-6 lg:col-span-2">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-bold">Your plan</h2>
+              <p className="mt-1 text-sm text-ink-mute">
+                {subscription.state === 'free'
+                  ? 'Your shop is on a free plan.'
+                  : subscription.state === 'off'
+                    ? 'Your plan has ended. Customers can’t order until it is renewed.'
+                    : `${rupees(subscription.fee)} a month, paid until ${planDate(subscription.paidUntil)}.`}
+              </p>
+            </div>
+            <Badge tone={PLAN_TONE[subscription.state]}>{PLAN_LABEL[subscription.state]}</Badge>
+          </div>
+          {shop.subscription?.payments?.length ? (
+            <ul className="mt-4 divide-y divide-line text-sm">
+              {[...shop.subscription.payments].reverse().slice(0, 6).map((p, i) => (
+                <li key={i} className="flex justify-between gap-3 py-2">
+                  <span>
+                    <span className="font-mono font-semibold">{rupees(p.amount)}</span>
+                    <span className="text-ink-mute">
+                      {' '}
+                      · {p.months} month{p.months === 1 ? '' : 's'} · {METHOD_LABEL[p.method]}
+                    </span>
+                  </span>
+                  <span className="text-xs text-ink-mute">{planDate(p.at)}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {subscription.state !== 'free' && (
+            <a href={whatsappLink(`Hi, I want to renew SeedhaPrint for ${shop.name}.`)} target="_blank" rel="noopener noreferrer" className="mt-4 inline-block">
+              <Button type="button" variant="secondary" icon={<MessageCircle className="size-4" />}>
+                Renew on WhatsApp
+              </Button>
+            </a>
           )}
         </Card>
       </div>

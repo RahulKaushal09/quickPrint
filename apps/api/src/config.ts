@@ -32,6 +32,8 @@ export const config = {
   storageDir: env.STORAGE_DIR || new URL('../storage', import.meta.url).pathname,
   fileRetentionHours: Number(env.FILE_RETENTION_HOURS || 24),
   sofficePath: env.SOFFICE_PATH || '',
+  /** Days a shop keeps working after its subscription ends, before it switches off. */
+  subscriptionGraceDays: Number(env.SUBSCRIPTION_GRACE_DAYS || 3),
   /** Unpaid drafts are expired (and their files deleted) after this long. */
   draftTtlMinutes: 60,
   /** A job handed to a PC that hasn't confirmed it within this time goes back to the queue. */

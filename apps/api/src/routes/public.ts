@@ -13,7 +13,7 @@ import { dispatchShop } from '../hub';
 import { markPaid, newJobRef, randomCode, transition } from '../jobs';
 import { Job, Shop } from '../models';
 import { checkoutSignatureValid, confirmPayment, createOrder, RazorpayError, shopKeys } from '../payments';
-import { publicJob, publicShop } from '../presenters';
+import { publicJob, publicShop, shopCanSell } from '../presenters';
 import { readAll, storage } from '../storage';
 
 export const publicRoutes = Router();
@@ -24,6 +24,7 @@ const uploadLimit = rateLimit({ windowMs: 10 * 60_000, limit: 150, standardHeade
 async function shopByCode(code: string) {
   const shop = await Shop.findOne({ code: code.toUpperCase() });
   if (!shop || !shop.active) throw new HttpError(404, 'This QR code is not active');
+  if (!shopCanSell(shop)) throw new HttpError(403, 'This shop is not taking orders here right now. Please ask at the counter.');
   return shop;
 }
 
@@ -143,7 +144,7 @@ publicRoutes.post('/jobs/:ref/checkout', async (req, res) => {
   const job = await jobByRef(String(req.params.ref));
   if (job.status !== 'draft') throw new HttpError(409, 'This job is already placed');
   const shop = await Shop.findById(job.shopId);
-  if (!shop?.active || !shop.accepting) throw new HttpError(409, 'This shop is not taking print orders right now');
+  if (!shop || !shopCanSell(shop) || !shop.accepting) throw new HttpError(409, 'This shop is not taking print orders right now');
   const status = await publicShop(shop);
 
   let options: Record<string, unknown>;

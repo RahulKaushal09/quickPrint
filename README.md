@@ -122,6 +122,25 @@ The customer takes or chooses one photo, drags and zooms it to fit the face in t
 
 There is no background removal yet: customers should stand in front of a plain light wall.
 
+## Subscriptions
+
+Shops pay SeedhaPrint a monthly fee, set per shop in the admin panel. A fee of 0 means free, and every shop starts free until a fee is set, so adding this never switches anyone off.
+
+| State | When | What happens |
+|---|---|---|
+| Free | Fee is 0 | Never switches off |
+| Paid | More than 5 days left | Normal |
+| Due soon | 5 days or less left | Yellow reminder in the shop's dashboard |
+| Overdue | Past the paid-until date, within the grace days | Orange warning; customers can still order |
+| Switched off | Past the grace days | Red banner for the shop; the QR page says the shop isn't taking orders. Jobs already paid still print |
+
+- **Admin → Add shop** takes a monthly fee and free days before the first payment (default 14).
+- **Admin → click a shop → Record a payment** adds 1, 3, 6 or 12 months: after the current end date if paid early, from today if it had already ended. The shop switches back on at once. Each payment is kept with its method and note (UTR).
+- The paid-until date can be changed by hand to correct a mistake.
+- Filters show Paid, Due soon, Overdue, Switched off and Free, with this month's subscription income.
+- Grace days: `SUBSCRIPTION_GRACE_DAYS` in `apps/api/.env` (default 3).
+- The state is worked out from the fee and date on every request (`apps/api/src/subscription.ts`), so nothing runs on a timer. Online payment by the shop itself is not built yet; owners get a WhatsApp renew button.
+
 ## Cash
 
 Customers can choose cash when the shop allows it (**Settings → Accept cash**). The **Print cash orders directly** switch on the overview decides what happens next:
