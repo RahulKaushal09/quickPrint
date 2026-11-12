@@ -4,4 +4,6 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('seedhaPrintDesktop', {
   pair: (code, server) => ipcRenderer.invoke('pair', code, server),
   deviceId: () => ipcRenderer.invoke('device-id'),
+  addPrinter: () => ipcRenderer.invoke('add-printer'),
+  printerSettings: () => ipcRenderer.invoke('printer-settings'),
 });

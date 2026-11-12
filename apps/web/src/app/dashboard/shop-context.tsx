@@ -4,6 +4,14 @@ import { createContext, useContext } from 'react';
 import type { PhotoPaper, PhotoSize } from '@seedhaprint/shared';
 import type { Plan, PlanPayment } from '@/lib/plan';
 
+/** The owner's own settings for one printer. sides '' = follow what Windows says. */
+export interface PrinterSetting {
+  printer: string;
+  label: string;
+  sides: '' | 'auto' | 'manual' | 'off';
+  reverseBacks: boolean;
+}
+
 /** A printer's trays in order of preference. */
 export interface TrayOrder {
   printer: string;
@@ -23,6 +31,7 @@ export interface ShopData {
   rates: { bwPerPage: number; colorPerPage: number; colorEnabled: boolean; duplexEnabled: boolean };
   printers: { bw: string[]; color: string[]; duplex: string[]; photo: string[] };
   trays: TrayOrder[];
+  printerSettings: PrinterSetting[];
   cash: { enabled: boolean; autoPrint: boolean };
   photos: { enabled: boolean; size: PhotoSize; paper: PhotoPaper; perSheet: number; price: number };
   subscription: { fee: number; paidUntil?: string; payments: PlanPayment[] };

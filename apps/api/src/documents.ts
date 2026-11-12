@@ -151,6 +151,44 @@ export async function layoutForPrint(pdf: Buffer, choices: PageChoice[]): Promis
   return Buffer.from(await out.save());
 }
 
+/**
+ * One half of a both-sides job printed by hand: every front, or every back,
+ * for all copies in one file. An odd page count gets a blank last back so
+ * fronts and backs pair up. reverse prints the backs last-to-first, for
+ * printers whose output stack comes back the other way round.
+ */
+export async function sideOfJob(pdf: Buffer, copies: number, side: 'front' | 'back', reverse = false): Promise<Buffer> {
+  const src = await PDFDocument.load(pdf, { updateMetadata: false });
+  const count = src.getPageCount();
+  const one: (number | null)[] = [];
+  for (let i = side === 'front' ? 0 : 1; i < count + (count % 2); i += 2) one.push(i < count ? i : null);
+  const all = Array.from({ length: Math.max(1, copies) }, () => one).flat();
+  if (side === 'back' && reverse) all.reverse();
+  const out = await PDFDocument.create();
+  // Each page is embedded once and drawn as often as needed, so 20 copies don't make a file 20 times the size.
+  const embedded = new Map<number, Awaited<ReturnType<typeof out.embedPage>>>();
+  const pages = src.getPages();
+  for (const i of all) {
+    if (i === null) {
+      out.addPage([A4.w, A4.h]);
+      continue;
+    }
+    const page = pages[i]!;
+    const box = page.getCropBox();
+    if (!page.node.Contents()) {
+      out.addPage([box.width, box.height]); // a blank page has nothing to embed
+      continue;
+    }
+    if (!embedded.has(i)) embedded.set(i, await out.embedPage(page, { left: box.x, bottom: box.y, right: box.x + box.width, top: box.y + box.height }));
+    const angle = (((page.getRotation().angle % 360) + 360) % 360) as 0 | 90 | 180 | 270;
+    const turned = angle % 180 !== 0;
+    const { width: w, height: h } = box;
+    const anchor = { 0: { x: 0, y: 0 }, 90: { x: 0, y: w }, 180: { x: w, y: h }, 270: { x: h, y: 0 } }[angle];
+    out.addPage(turned ? [h, w] : [w, h]).drawPage(embedded.get(i)!, { ...anchor, rotate: degrees(-angle) });
+  }
+  return Buffer.from(await out.save());
+}
+
 /** A customer photo, upright and a sensible size, ready to crop. */
 export async function normalizePhoto(buf: Buffer): Promise<{ jpeg: Buffer; width: number; height: number }> {
   try {

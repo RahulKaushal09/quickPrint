@@ -1,9 +1,10 @@
 'use client';
 
-import { AlertTriangle, Banknote, Clock, Eye, MoreHorizontal, RotateCcw, Undo2, X } from 'lucide-react';
+import { AlertTriangle, Banknote, Clock, Copy, Eye, MoreHorizontal, RotateCcw, Undo2, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { JobStatus } from '@seedhaprint/shared';
 import { Badge, Button, Field, Input, Modal, StatusPill, useToast } from '@/components/ui';
+import { useShop } from '@/app/dashboard/shop-context';
 import { api, openAuthed } from '@/lib/api';
 import { cx, plural, rupees, timeAgo } from '@/lib/format';
 
@@ -42,6 +43,8 @@ export function JobList({ jobs, onChange, compact }: { jobs: ShopJob[]; onChange
 
 function JobRow({ job, onChange, compact }: { job: ShopJob; onChange: (j: ShopJob) => void; compact?: boolean }) {
   const toast = useToast();
+  const { shop } = useShop();
+  const printerName = shop.printerSettings.find((p) => p.printer === job.printer)?.label || job.printer;
   const [menu, setMenu] = useState(false);
   const [failOpen, setFailOpen] = useState(false);
   const [reason, setReason] = useState('');
@@ -92,7 +95,7 @@ function JobRow({ job, onChange, compact }: { job: ShopJob; onChange: (j: ShopJo
           </span>
           {job.sides === 'double' && <span className="font-semibold text-ink-soft">· Both sides</span>}
           {job.cash && <span className="font-semibold text-ok">· Cash</span>}
-          {!compact && job.printer && <span className="hidden truncate sm:inline">· {job.printer}</span>}
+          {!compact && job.printer && <span className="hidden truncate sm:inline">· {printerName}</span>}
           <span>· {timeAgo(job.paidAt || job.createdAt)}</span>
         </p>
         {job.waiting && ['sent', 'printing'].includes(job.status) && (
@@ -104,6 +107,13 @@ function JobRow({ job, onChange, compact }: { job: ShopJob; onChange: (j: ShopJo
           <p className="mt-1 flex items-center gap-1 text-xs font-medium text-bad">
             <AlertTriangle className="size-3.5" /> {job.error}
           </p>
+        )}
+        {job.status === 'printed' && job.file.available && !compact && (
+          <div className="mt-2">
+            <Button size="sm" variant="ghost" loading={busy} icon={<Copy className="size-4" />} onClick={() => confirm(`Print job ${job.pickupCode} again? The customer is not charged again.`) && act('reprint', undefined, 'Sent to the printer again')}>
+              Print again
+            </Button>
+          </div>
         )}
         {job.status === 'awaiting_cash' && (
           <div className="mt-2 flex flex-wrap gap-2">
@@ -145,6 +155,15 @@ function JobRow({ job, onChange, compact }: { job: ShopJob; onChange: (j: ShopJo
             {issue && (
               <MenuItem icon={<RotateCcw className="size-4" />} onClick={() => act('retry', undefined, 'Sent to the printer again')}>
                 Print again
+              </MenuItem>
+            )}
+            {job.status === 'printed' && (
+              <MenuItem
+                icon={<Copy className="size-4" />}
+                disabled={!job.file.available}
+                onClick={() => confirm(`Print job ${job.pickupCode} again? The customer is not charged again.`) && act('reprint', undefined, 'Sent to the printer again')}
+              >
+                {job.file.available ? 'Print again' : 'Print again (file deleted)'}
               </MenuItem>
             )}
             {issue && (

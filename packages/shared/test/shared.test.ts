@@ -19,7 +19,8 @@ test('quote enforces the ₹1 minimum and the limits', () => {
 test('job transitions only move forward', () => {
   assert.ok(canMove('draft', 'queued'));
   assert.ok(canMove('sent', 'queued'));
-  assert.ok(!canMove('printed', 'queued'));
+  assert.ok(canMove('printed', 'queued')); // the shop prints it again
+  assert.ok(!canMove('printed', 'printing'));
   assert.ok(!canMove('refunded', 'queued'));
 });
 

@@ -19,15 +19,36 @@ import (
 // the jobs it receives one at a time in arrival order.
 
 type recentJob struct {
-	ID      string    `json:"id"`
+	ID      string    `json:"id"` // job id, plus #n for a reprint
 	Name    string    `json:"name"`
-	Printer string    `json:"printer"`
+	Printer string    `json:"printer"` // the shop's own name for it when set
 	Copies  int       `json:"copies"`
+	Pages   int       `json:"pages"`
 	Color   bool      `json:"color"`
+	Duplex  bool      `json:"duplex"`
+	Photo   bool      `json:"photo"`
 	Pickup  string    `json:"pickup"`
-	Status  string    `json:"status"`
+	Status  string    `json:"status"` // waiting | downloading | printing | flip | printed | failed
 	Error   string    `json:"error,omitempty"`
 	At      time.Time `json:"at"`
+}
+
+// jobKey tells a reprint apart from the first print of the same job.
+func jobKey(o *JobOrder) string {
+	if o.Run > 0 {
+		return fmt.Sprintf("%s#%d", o.JobID, o.Run)
+	}
+	return o.JobID
+}
+
+// workName is the job's file name on disk: a reprint never shares a file with the first print.
+func workName(o *JobOrder) string { return strings.ReplaceAll(jobKey(o), "#", "-r") }
+
+func printerName(o *JobOrder) string {
+	if o.PrinterLabel != "" {
+		return o.PrinterLabel
+	}
+	return o.Printer
 }
 
 type Agent struct {
@@ -44,10 +65,11 @@ type Agent struct {
 	pending   map[string]bool
 	done      *ledger
 	wake      chan struct{} // re-pairing from the status page restarts the loop immediately
+	flips     map[string]chan struct{} // both sides by hand: closed when the shop has turned the stack over
 }
 
 func newAgent(cfg *Config) *Agent {
-	return &Agent{cfg: cfg, queues: map[string]chan *JobOrder{}, pending: map[string]bool{}, done: loadLedger(), wake: make(chan struct{}, 1)}
+	return &Agent{cfg: cfg, queues: map[string]chan *JobOrder{}, pending: map[string]bool{}, done: loadLedger(), wake: make(chan struct{}, 1), flips: map[string]chan struct{}{}}
 }
 
 func (a *Agent) config() *Config {
@@ -213,6 +235,8 @@ func (a *Agent) session(cfg *Config) error {
 			if msg.Job != nil {
 				a.enqueue(msg.Job)
 			}
+		case "refresh":
+			go a.refreshPrinters()
 		case "error":
 			logf("server: %s", msg.Error)
 		}
@@ -221,18 +245,19 @@ func (a *Agent) session(cfg *Config) error {
 
 func (a *Agent) enqueue(o *JobOrder) {
 	// The server may resend a job after a reconnect. Never print it twice.
-	if a.done.has(o.JobID) {
+	key := jobKey(o)
+	if a.done.has(key) {
 		a.report(o.JobID, "job.accepted", "", "")
 		a.report(o.JobID, "job.printed", "", "")
 		return
 	}
 	a.mu.Lock()
-	if a.pending[o.JobID] {
+	if a.pending[key] {
 		a.mu.Unlock()
 		a.report(o.JobID, "job.accepted", "", "")
 		return
 	}
-	a.pending[o.JobID] = true
+	a.pending[key] = true
 	q, ok := a.queues[o.Printer]
 	if !ok {
 		q = make(chan *JobOrder, 200)
@@ -271,11 +296,11 @@ func (a *Agent) worker(queue chan *JobOrder) {
 			logf("job %s printed on %s (%d copies)", o.JobID, o.Printer, o.Copies)
 			if !strings.HasPrefix(o.JobID, "test-") {
 				// Only finished prints are remembered: a failed job must print when it is retried.
-				a.done.add(o.JobID)
+				a.done.add(jobKey(o))
 			}
 		}
 		a.mu.Lock()
-		delete(a.pending, o.JobID)
+		delete(a.pending, jobKey(o))
 		a.mu.Unlock()
 		a.track(o, map[string]string{"job.printed": "printed", "job.failed": "failed"}[status], msg)
 		a.report(o.JobID, status, msg, code)
@@ -287,35 +312,130 @@ func (a *Agent) printOne(o *JobOrder, work string) error {
 	if cfg == nil {
 		return fmt.Errorf("PC is not paired")
 	}
+	note := func(n string) {
+		logf("job %s: %s", o.JobID, n)
+		a.track(o, "printing", n)
+		a.report(o.JobID, "job.waiting", n, "")
+	}
+	if o.Duplex && o.ManualDuplex {
+		return a.printByHand(o, cfg, work, note)
+	}
 	a.track(o, "downloading", "")
-	file := filepath.Join(work, o.JobID+".pdf")
+	file := filepath.Join(work, workName(o)+".pdf")
 	defer os.Remove(file)
 	if err := download(cfg, o.FileURL, file); err != nil {
 		return err
 	}
 	a.track(o, "printing", "")
 	a.report(o.JobID, "job.printing", "", "")
-	note := func(n string) {
-		logf("job %s: %s", o.JobID, n)
-		a.track(o, "printing", n)
-		a.report(o.JobID, "job.waiting", n, "")
-	}
 	return printWithTrays(o.Trays, func(tray string) error { return printFile(o, file, tray, note) }, note)
+}
+
+// flipWait is how long the PC waits for someone to turn the pages over.
+const flipWait = 3 * time.Hour
+
+// printByHand prints both sides on a printer that can't turn the paper: every
+// front first, then it waits until the shop has put the stack back in the
+// tray and pressed Print back sides, then every back. Copies are inside the
+// files, so each half prints once.
+func (a *Agent) printByHand(o *JobOrder, cfg *Config, work string, note func(string)) error {
+	half := *o
+	half.Copies, half.Duplex = 1, false
+	sep := "?"
+	if strings.Contains(o.FileURL, "?") {
+		sep = "&"
+	}
+	print := func(side string) error {
+		file := filepath.Join(work, workName(o)+"-"+side+".pdf")
+		defer os.Remove(file)
+		if err := download(cfg, o.FileURL+sep+"side="+side, file); err != nil {
+			return err
+		}
+		return printWithTrays(o.Trays, func(tray string) error { return printFile(&half, file, tray, note) }, note)
+	}
+
+	a.track(o, "downloading", "")
+	a.report(o.JobID, "job.printing", "", "")
+	a.track(o, "printing", "Printing the front sides")
+	if err := print("front"); err != nil {
+		return err
+	}
+
+	key := jobKey(o)
+	ready := make(chan struct{})
+	a.mu.Lock()
+	a.flips[key] = ready
+	a.mu.Unlock()
+	defer func() {
+		a.mu.Lock()
+		delete(a.flips, key)
+		a.mu.Unlock()
+	}()
+	const ask = "Front sides printed. Put the pages back in the tray, blank side to print, and press Print back sides on the shop PC."
+	a.track(o, "flip", ask)
+	a.report(o.JobID, "job.waiting", ask, "")
+	select {
+	case <-ready:
+	case <-time.After(flipWait):
+		return fmt.Errorf("the back sides were not printed: nobody pressed Print back sides")
+	}
+
+	a.track(o, "printing", "Printing the back sides")
+	a.report(o.JobID, "job.waiting", "Printing the back sides", "")
+	err := print("back")
+	var out *PaperOutError
+	if errors.As(err, &out) {
+		// The fronts are already printed, so this job can't move to another printer.
+		return fmt.Errorf("%s while printing the back sides. Add paper and print the job again", strings.ToLower(out.Reason))
+	}
+	return err
+}
+
+// flipDone is called when the shop has turned the stack over. False if that job isn't waiting.
+func (a *Agent) flipDone(key string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	ch, ok := a.flips[key]
+	if ok {
+		close(ch)
+		delete(a.flips, key)
+	}
+	return ok
 }
 
 func (a *Agent) track(o *JobOrder, status, errMsg string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	key := jobKey(o)
 	for i := range a.recent {
-		if a.recent[i].ID == o.JobID {
+		if a.recent[i].ID == key {
 			a.recent[i].Status, a.recent[i].Error, a.recent[i].At = status, errMsg, time.Now()
 			return
 		}
 	}
-	a.recent = append([]recentJob{{ID: o.JobID, Name: o.FileName, Printer: o.Printer, Copies: o.Copies, Color: o.Color, Pickup: o.PickupCode, Status: status, Error: errMsg, At: time.Now()}}, a.recent...)
+	a.recent = append([]recentJob{{
+		ID: key, Name: o.FileName, Printer: printerName(o), Copies: o.Copies, Pages: o.Pages, Color: o.Color, Duplex: o.Duplex, Photo: o.Kind == "photo",
+		Pickup: o.PickupCode, Status: status, Error: errMsg, At: time.Now(),
+	}}, a.recent...)
 	if len(a.recent) > 30 {
 		a.recent = a.recent[:30]
 	}
+}
+
+// refreshPrinters asks every driver again (a printer was just added or changed in
+// Windows) and always tells the server, so the dashboard's Refresh shows a result.
+func (a *Agent) refreshPrinters() {
+	forgetPrinterDetails()
+	list, err := listPrinters()
+	if err != nil {
+		logf("listing printers: %v", err)
+		return
+	}
+	a.mu.Lock()
+	a.printers = list
+	a.mu.Unlock()
+	_ = a.send(printersMessage{Type: "printers", Printers: list})
+	logf("printers refreshed: %d found", len(list))
 }
 
 // watchPrinters re-reads the printer list and tells the server when it changes

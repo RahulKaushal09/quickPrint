@@ -19,8 +19,8 @@ import (
 
 func listPrinters() ([]Printer, error) {
 	return []Printer{
-		{Name: "Canon LBP2900", Status: "ready", IsDefault: true, Trays: []string{"Tray 1", "Manual feed"}},
-		{Name: "Epson L3150 Series", Status: "ready", Duplex: true, Trays: []string{"Rear tray", "Photo tray"}},
+		{Name: "Canon LBP2900", Status: "ready", IsDefault: true, Trays: []string{"Tray 1", "Manual feed"}, Driver: "Canon LBP2900", Location: "Counter"},
+		{Name: "Epson L3150 Series", Status: "ready", Duplex: true, Trays: []string{"Rear tray", "Photo tray"}, Driver: "EPSON L3150 Series"},
 	}, nil
 }
 
@@ -55,7 +55,7 @@ func printFile(o *JobOrder, file, tray string, _ func(string)) error {
 	if tray == "" {
 		tray = "auto"
 	}
-	dest := filepath.Join(dir, fmt.Sprintf("%s_%s_%s_%s_%dx_%s.pdf", o.PickupCode, mode, sides, strings.ReplaceAll(tray, " ", "-"), o.Copies, o.JobID))
+	dest := filepath.Join(dir, fmt.Sprintf("%s_%s_%s_%s_%dx_%s", o.PickupCode, mode, sides, strings.ReplaceAll(tray, " ", "-"), o.Copies, filepath.Base(file)))
 	src, err := os.Open(file)
 	if err != nil {
 		return err
@@ -70,5 +70,7 @@ func printFile(o *JobOrder, file, tray string, _ func(string)) error {
 	logf("simulated print -> %s", dest)
 	return err
 }
+
+func forgetPrinterDetails() {}
 
 func osDescription() string { return runtime.GOOS + " (simulated printers)" }

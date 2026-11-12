@@ -6,9 +6,10 @@
 // With no more security fixes coming, this app only ever opens SeedhaPrint's own
 // pages: anything else goes to the normal browser.
 
-const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, screen, shell, Tray } = require('electron');
 const { execFile, spawn } = require('node:child_process');
 const fs = require('node:fs');
+const http = require('node:http');
 const path = require('node:path');
 const config = require('./config.json');
 
@@ -74,6 +75,118 @@ ipcMain.handle('pair', async (_event, code, server) => {
     startAgent();
   }
 });
+
+/** Opens Windows' own Add a printer wizard (Windows 7 to 11). The agent sees the new printer within seconds. */
+ipcMain.handle('add-printer', () => {
+  spawn('rundll32.exe', ['printui.dll,PrintUIEntry', '/il'], { detached: true, stdio: 'ignore' }).unref();
+});
+ipcMain.handle('printer-settings', () => {
+  spawn('control.exe', ['printers'], { detached: true, stdio: 'ignore' }).unref();
+});
+
+// ---------------------------------------------------------------- corner pop-up
+// The agent's status port says what is printing. A new job, or one waiting for
+// the pages to be turned over, opens a small box in the bottom-right corner
+// without taking the keyboard away from whatever the shop is typing.
+
+const AGENT = 'http://127.0.0.1:47210';
+const PANEL_WIDTH = 380;
+const SHOW_DONE_FOR = 10_000; // a finished job stays this long, then the box hides itself
+
+let panel = null;
+let panelHeight = 120;
+let seen = null; // job ids already known, so jobs from before the app started don't pop up
+let hiddenUntilNew = false;
+let lastJobs = [];
+
+function agentRequest(method, pathname) {
+  return new Promise((resolve, reject) => {
+    const req = http.request(`${AGENT}${pathname}`, { method, timeout: 3000 }, (res) => {
+      let body = '';
+      res.on('data', (c) => (body += c));
+      res.on('end', () => (res.statusCode < 300 ? resolve(body) : reject(new Error(body.trim() || `HTTP ${res.statusCode}`))));
+    });
+    req.on('timeout', () => req.destroy(new Error('timeout')));
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+function placePanel() {
+  if (!panel) return;
+  const area = screen.getPrimaryDisplay().workArea;
+  const height = Math.min(panelHeight, area.height - 24);
+  panel.setBounds({ x: area.x + area.width - PANEL_WIDTH - 12, y: area.y + area.height - height - 12, width: PANEL_WIDTH, height });
+}
+
+function createPanel() {
+  panel = new BrowserWindow({
+    width: PANEL_WIDTH,
+    height: panelHeight,
+    show: false,
+    frame: false,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    focusable: false, // clicks still work, but typing stays where it was
+    transparent: true,
+    backgroundColor: '#00000000',
+    webPreferences: { preload: path.join(__dirname, 'panel-preload.js'), contextIsolation: true, sandbox: true },
+  });
+  panel.setAlwaysOnTop(true, 'screen-saver');
+  panel.loadFile(path.join(__dirname, 'panel.html')).catch(() => {});
+  panel.webContents.on('did-finish-load', () => panel.webContents.send('jobs', lastJobs));
+  panel.on('closed', () => (panel = null));
+  placePanel();
+}
+
+ipcMain.on('panel-height', (_e, h) => {
+  panelHeight = Math.max(60, Math.round(Number(h) || 0) + 2);
+  placePanel();
+});
+ipcMain.on('panel-hide', () => {
+  hiddenUntilNew = true;
+  panel?.hide();
+});
+ipcMain.on('panel-open', showWindow);
+ipcMain.handle('flip', async (_e, id) => {
+  await agentRequest('POST', `/api/flip?job=${encodeURIComponent(String(id))}`).catch(() => {});
+  void pollAgent();
+});
+
+async function pollAgent() {
+  let state;
+  try {
+    state = JSON.parse(await agentRequest('GET', '/api/state'));
+  } catch {
+    return; // the agent is starting or restarting
+  }
+  const jobs = Array.isArray(state.jobs) ? state.jobs : [];
+  const now = Date.now();
+  const fresh = seen !== null && jobs.some((j) => !seen.has(j.id));
+  const flip = jobs.some((j) => j.status === 'flip');
+  if (seen === null) seen = new Set();
+  for (const j of jobs) seen.add(j.id);
+
+  // Shown: everything still printing, plus jobs that finished a moment ago.
+  lastJobs = jobs.filter((j) => !['printed', 'failed'].includes(j.status) || now - new Date(j.at).getTime() < SHOW_DONE_FOR).slice(0, 6);
+  if (fresh || flip) hiddenUntilNew = false;
+  if (!lastJobs.length || hiddenUntilNew) {
+    panel?.hide();
+    return;
+  }
+  if (!panel) createPanel();
+  panel.webContents.send('jobs', lastJobs);
+  if (!panel.isVisible()) {
+    placePanel();
+    panel.showInactive();
+  }
+  if (fresh) shell.beep();
+  if (flip && win && !win.isFocused()) win.flashFrame(true);
+}
 
 // ---------------------------------------------------------------- window
 
@@ -173,6 +286,7 @@ app.whenReady().then(() => {
   startAgent();
   createWindow();
   createTray();
+  setInterval(() => void pollAgent(), 1500);
 });
 
 app.on('window-all-closed', () => {}); // stays alive in the tray

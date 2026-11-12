@@ -28,6 +28,19 @@ const printersSchema = new Schema(
 );
 /** A printer's trays in order of preference, separately for documents and photos. */
 const traySchema = new Schema({ printer: { type: String, required: true }, docs: { type: [String], default: [] }, photos: { type: [String], default: [] } }, sub);
+/** The owner's own settings for one printer. */
+const printerSettingSchema = new Schema(
+  {
+    printer: { type: String, required: true },
+    /** The shop's own name for it, e.g. "Counter B/W". Empty = the Windows name. */
+    label: { type: String, default: '', trim: true },
+    /** Both sides: '' = follow Windows, 'auto' = the printer turns the paper, 'manual' = the shop turns the stack over, 'off'. */
+    sides: { type: String, enum: ['', 'auto', 'manual', 'off'], default: '' },
+    /** By hand: print the back pages last-to-first, for printers that stack their output the other way round. */
+    reverseBacks: { type: Boolean, default: false },
+  },
+  sub,
+);
 const photosSchema = new Schema(
   {
     enabled: { type: Boolean, required: true, default: false },
@@ -95,6 +108,7 @@ const shopSchema = new Schema(
     razorpay: { type: razorpaySchema, default: () => ({}) },
     cash: { type: cashSchema, default: () => ({}) },
     trays: { type: [traySchema], default: [] },
+    printerSettings: { type: [printerSettingSchema], default: [] },
     photos: { type: photosSchema, default: () => ({}) },
     subscription: { type: subscriptionSchema, default: () => ({}) },
   },
@@ -133,6 +147,9 @@ const deviceSchema = new Schema(
         isDefault: Boolean,
         duplex: Boolean,
         trays: [String],
+        driver: String,
+        location: String,
+        comment: String,
       },
     ],
     online: { type: Boolean, default: false },
@@ -192,6 +209,8 @@ const jobSchema = new Schema(
     },
     deviceId: { type: Schema.Types.ObjectId, ref: 'Device' },
     printer: { type: String, default: '' },
+    /** How many times the shop printed it again after it printed. */
+    run: { type: Number, default: 0 },
     /** Printers that ran out of paper on this job before printing anything. */
     triedPrinters: { type: [String], default: [] },
     /** A note from the shop PC while printing, e.g. a tray ran out and the next one took over. */

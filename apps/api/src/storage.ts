@@ -8,7 +8,7 @@ import type { Response } from 'express';
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import type { PageChoice } from '@seedhaprint/shared';
 import { config } from './config';
-import { layoutForPrint } from './documents';
+import { layoutForPrint, sideOfJob } from './documents';
 
 interface Storage {
   put(key: string, data: Buffer, contentType: string): Promise<void>;
@@ -63,9 +63,17 @@ export async function readAll(key: string): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
-/** The file as the printer should get it: the chosen pages on upright A4. */
-export async function sendPrintFile(res: Response, job: { file: { key?: string | null }; pageList?: unknown }) {
-  const pdf = await layoutForPrint(await readAll(job.file.key!), (job.pageList ?? []) as PageChoice[]);
+/**
+ * The file as the printer should get it: the chosen pages on upright A4.
+ * With `side`, only the fronts or the backs, every copy inside, for both sides printed by hand.
+ */
+export async function sendPrintFile(
+  res: Response,
+  job: { file: { key?: string | null }; pageList?: unknown; copies?: number | null },
+  side?: { side: 'front' | 'back'; reverse: boolean },
+) {
+  let pdf = await layoutForPrint(await readAll(job.file.key!), (job.pageList ?? []) as PageChoice[]);
+  if (side) pdf = await sideOfJob(pdf, job.copies ?? 1, side.side, side.reverse);
   res.setHeader('Content-Type', 'application/pdf');
   res.end(pdf);
 }

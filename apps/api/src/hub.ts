@@ -148,12 +148,12 @@ async function handle(c: Conn, msg: AgentMessage) {
  */
 async function moveToAnotherPrinter(c: Conn, jobId: string, reason: string): Promise<boolean> {
   const job = await Job.findOne({ _id: jobId, deviceId: c.deviceId, status: { $in: ['sent', 'printing'] } });
-  const shop = job && (await Shop.findById(job.shopId).select('printers').lean());
+  const shop = job && (await Shop.findById(job.shopId).select('printers printerSettings').lean());
   if (!job || !shop) return false;
   const tried = [...new Set([...(job.triedPrinters ?? []), job.printer])];
   const ids = byShop.get(c.shopId) ?? new Set<string>();
   const others = [...ids].flatMap((id) => conns.get(id)?.printers ?? []);
-  if (!others.some((p) => printerFits(p, { ...job.toObject(), triedPrinters: tried }, shop.printers as ShopPrinters))) return false;
+  if (!others.some((p) => printerFits(p, { ...job.toObject(), triedPrinters: tried }, shop as ShopRouting))) return false;
   const moved = await Job.findOneAndUpdate(
     { _id: job._id, status: { $in: ['sent', 'printing'] } },
     {
@@ -185,6 +185,33 @@ interface ShopPrinters {
   photo?: unknown;
 }
 
+export interface PrinterSetting {
+  printer: string;
+  label?: string | null;
+  sides?: string | null;
+  reverseBacks?: boolean | null;
+}
+
+/** What a shop has chosen about its printers. */
+export interface ShopRouting {
+  printers?: ShopPrinters | null;
+  printerSettings?: PrinterSetting[] | null;
+}
+
+export const settingFor = (shop: ShopRouting | null | undefined, printer: string) => shop?.printerSettings?.find((s) => s.printer === printer);
+
+/**
+ * How this printer prints both sides: 'auto' (it turns the paper), 'manual'
+ * (the shop turns the stack over), or 'off'. The owner's choice wins; without
+ * one, the old both-sides list, and without that, what Windows reports.
+ */
+export function sidesOf(p: AgentPrinter, shop: ShopRouting | null | undefined): 'auto' | 'manual' | 'off' {
+  const chosen = settingFor(shop, p.name)?.sides;
+  if (chosen === 'auto' || chosen === 'manual' || chosen === 'off') return chosen;
+  const duplex = printerList(shop?.printers?.duplex);
+  return (duplex.length ? duplex.includes(p.name) : p.duplex) ? 'auto' : 'off';
+}
+
 export interface JobNeeds {
   mode?: string | null;
   sides?: string | null;
@@ -202,13 +229,12 @@ function assignedFor(job: JobNeeds, assigned: ShopPrinters | null | undefined): 
 }
 
 /** Whether this printer is allowed to take a job of this kind. */
-export function printerFits(p: AgentPrinter, job: JobNeeds, assigned: ShopPrinters | null | undefined): boolean {
-  const wanted = assignedFor(job, assigned);
+export function printerFits(p: AgentPrinter, job: JobNeeds, shop: ShopRouting | null | undefined): boolean {
+  const wanted = assignedFor(job, shop?.printers);
   if (p.status === 'offline' || (wanted.length > 0 && !wanted.includes(p.name))) return false;
   if (job.triedPrinters?.includes(p.name)) return false;
   if (job.sides !== 'double' || job.kind === 'photo') return true;
-  const duplex = printerList(assigned?.duplex);
-  return duplex.length ? duplex.includes(p.name) : Boolean(p.duplex);
+  return sidesOf(p, shop) !== 'off';
 }
 
 /**
@@ -216,17 +242,19 @@ export function printerFits(p: AgentPrinter, job: JobNeeds, assigned: ShopPrinte
  * Assigned printers: the ready one with the least work wins, so jobs spread out
  * and a jammed printer is skipped. Nothing assigned: the PC's default printer.
  */
-function route(job: JobDoc, assigned: ShopPrinters, devices: Conn[], load: Map<string, number>): { c: Conn; printer: string } | null {
-  const wanted = assignedFor(job, assigned);
-  const options = devices.flatMap((c) => c.printers.map((p) => ({ c, p }))).filter(({ p }) => printerFits(p, job, assigned));
+function route(job: JobDoc, shop: ShopRouting, devices: Conn[], load: Map<string, number>): { c: Conn; printer: AgentPrinter } | null {
+  const wanted = assignedFor(job, shop.printers);
+  const options = devices.flatMap((c) => c.printers.map((p) => ({ c, p }))).filter(({ p }) => printerFits(p, job, shop));
   if (!options.length) return null;
+  // Both sides: a printer that turns the paper itself beats one where someone has to.
+  const byHand = (p: AgentPrinter) => (job.sides === 'double' && job.kind !== 'photo' && sidesOf(p, shop) === 'manual' ? 1 : 0);
   const rank = ({ p }: (typeof options)[number]) =>
-    [p.status === 'ready' ? 0 : 1, wanted.length ? (load.get(p.name) ?? 0) : p.isDefault ? 0 : 1, wanted.length ? wanted.indexOf(p.name) : (load.get(p.name) ?? 0)] as const;
+    [p.status === 'ready' ? 0 : 1, byHand(p), wanted.length ? (load.get(p.name) ?? 0) : p.isDefault ? 0 : 1, wanted.length ? wanted.indexOf(p.name) : (load.get(p.name) ?? 0)] as const;
   options.sort((x, y) => {
     const [a, b] = [rank(x), rank(y)];
-    return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+    return a[0] - b[0] || a[1] - b[1] || a[2] - b[2] || a[3] - b[3];
   });
-  return { c: options[0]!.c, printer: options[0]!.p.name };
+  return { c: options[0]!.c, printer: options[0]!.p };
 }
 
 type TrayConfig = { printer?: string | null; docs?: string[] | null; photos?: string[] | null }[];
@@ -239,13 +267,17 @@ function traysFor(job: JobDoc, printer: string, trays: TrayConfig | null | undef
   return exists?.length ? order.filter((t) => exists.includes(t)) : order;
 }
 
-export function orderFor(job: JobDoc, printer: string, trays: string[] = []): JobOrder {
+export function orderFor(job: JobDoc, printer: AgentPrinter, shop: ShopRouting = {}, trays: string[] = []): JobOrder {
+  const duplex = job.sides === 'double' && job.kind !== 'photo';
   return {
     jobId: String(job._id),
-    printer,
+    printer: printer.name,
+    printerLabel: settingFor(shop, printer.name)?.label || undefined,
     copies: job.copies,
     color: job.mode === 'color',
-    duplex: job.sides === 'double' && job.kind !== 'photo',
+    duplex,
+    ...(duplex && sidesOf(printer, shop) === 'manual' ? { manualDuplex: true } : {}),
+    ...(job.run ? { run: job.run } : {}),
     ...(job.kind === 'photo' ? { kind: 'photo' as const, paper: job.photo?.paper ?? 'A4' } : {}),
     trays,
     pages: job.printPages ?? job.file.pages,
@@ -260,7 +292,7 @@ export async function dispatchShop(shopId: string | Types.ObjectId) {
   const ids = byShop.get(String(shopId));
   if (!ids?.size) return;
   const devices = [...ids].map((id) => conns.get(id)!).filter(Boolean);
-  const shop = await Shop.findById(shopId).select('printers trays').lean();
+  const shop = await Shop.findById(shopId).select('printers trays printerSettings').lean();
   if (!shop) return;
 
   const queued = await Job.find({ shopId, status: 'queued' }).sort({ createdAt: 1 }).limit(20);
@@ -271,17 +303,18 @@ export async function dispatchShop(shopId: string | Types.ObjectId) {
   ]);
   const load = new Map<string, number>(busy.map((b) => [String(b._id), b.jobs as number]));
   for (const job of queued) {
-    const r = route(job, shop.printers as ShopPrinters, devices, load);
+    const r = route(job, shop as ShopRouting, devices, load);
     if (!r) continue;
+    const name = r.printer.name;
     const claimed = await transition(job._id, 'sent', {
       only: ['queued'],
-      note: `Sent to ${r.printer}`,
-      set: { deviceId: r.c.deviceId, printer: r.printer, sentAt: new Date(), acceptedAt: null, waiting: '' },
+      note: `Sent to ${name}`,
+      set: { deviceId: r.c.deviceId, printer: name, sentAt: new Date(), acceptedAt: null, waiting: '' },
     });
     if (claimed) {
-      load.set(r.printer, (load.get(r.printer) ?? 0) + 1);
-      const trays = traysFor(claimed, r.printer, shop.trays as TrayConfig, r.c.printers.find((p) => p.name === r.printer));
-      send(r.c, { type: 'job', job: orderFor(claimed, r.printer, trays) });
+      load.set(name, (load.get(name) ?? 0) + 1);
+      const trays = traysFor(claimed, name, shop.trays as TrayConfig, r.printer);
+      send(r.c, { type: 'job', job: orderFor(claimed, r.printer, shop as ShopRouting, trays) });
     }
   }
 }
@@ -299,24 +332,40 @@ async function sweep() {
   for (const id of waiting) await dispatchShop(id);
 }
 
-/** Send a test page to one printer of a connected PC. Returns false if the PC isn't on this server. */
-export function sendTestPage(deviceId: string, printer: string, shopCode: string): boolean {
+/**
+ * Send a test page to one printer of a connected PC. Returns false if the PC isn't on this server.
+ * Both sides: 4 numbered pages on 2 sheets, printed the way real both-sides jobs go to this printer.
+ */
+export function sendTestPage(deviceId: string, printer: string, shopCode: string, shop: ShopRouting, bothSides = false): boolean {
   const c = conns.get(deviceId);
   if (!c) return false;
+  const p = c.printers.find((x) => x.name === printer) ?? { name: printer, status: 'ready' as const, isDefault: false };
+  const manual = bothSides && sidesOf(p, shop) === 'manual';
+  const query = `printer=${encodeURIComponent(printer)}${bothSides ? '&sides=double' : ''}${manual && settingFor(shop, printer)?.reverseBacks ? '&reverse=1' : ''}`;
   send(c, {
     type: 'job',
     job: {
       jobId: `test-${crypto.randomBytes(4).toString('hex')}`,
       printer,
+      printerLabel: settingFor(shop, printer)?.label || undefined,
       copies: 1,
       color: true,
-      duplex: false,
-      pages: 1,
-      fileName: 'Test page.pdf',
-      fileUrl: `/api/agent/test-page?printer=${encodeURIComponent(printer)}`,
+      duplex: bothSides,
+      ...(manual ? { manualDuplex: true } : {}),
+      pages: bothSides ? 4 : 1,
+      fileName: bothSides ? 'Both sides test.pdf' : 'Test page.pdf',
+      fileUrl: `/api/agent/test-page?${query}`,
       pickupCode: shopCode,
     },
   });
+  return true;
+}
+
+/** Ask a connected PC to read its printer list again. False if the PC isn't on this server. */
+export function refreshPrinters(deviceId: string): boolean {
+  const c = conns.get(deviceId);
+  if (!c) return false;
+  send(c, { type: 'refresh' });
   return true;
 }
 

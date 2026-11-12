@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"html/template"
 	"net"
 	"net/http"
@@ -65,7 +66,8 @@ button{font-size:15px;padding:9px 18px;border:0;border-radius:8px;background:#0b
 <div class="card"><b>Recent prints</b>
 <table><tr><th>Code</th><th>File</th><th>Printer</th><th>Status</th><th>When</th></tr>
 {{range .Recent}}<tr><td><b>{{.Pickup}}</b></td><td>{{.Name}} <span class="muted">&times;{{.Copies}} {{if .Color}}colour{{else}}B/W{{end}}</span></td><td class="muted">{{.Printer}}</td>
-<td><span class="pill {{.Status}}">{{.Status}}</span>{{if .Error}}<div class="muted">{{.Error}}</div>{{end}}</td><td class="muted">{{ago .At}}</td></tr>
+<td><span class="pill {{.Status}}">{{.Status}}</span>{{if .Error}}<div class="muted">{{.Error}}</div>{{end}}
+{{if eq .Status "flip"}}<form method="post" action="/flip" style="margin-top:6px"><input type="hidden" name="job" value="{{.ID}}"><button type="submit">Print back sides</button></form>{{end}}</td><td class="muted">{{ago .At}}</td></tr>
 {{else}}<tr><td colspan="5" class="muted">Nothing printed since the agent started.</td></tr>{{end}}
 </table></div>
 <p class="muted">Logs: {{.DataDir}}</p>
@@ -102,6 +104,33 @@ func (a *Agent) serveStatus(ln net.Listener) {
 			}
 		}
 		http.Redirect(w, r, "/", http.StatusSeeOther)
+	})
+	// Both sides by hand: the shop has put the stack back in the tray.
+	mux.HandleFunc("/flip", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			a.flipDone(r.FormValue("job"))
+		}
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+	})
+	// For the desktop app's pop-up: what is printing right now.
+	mux.HandleFunc("/api/state", func(w http.ResponseWriter, r *http.Request) {
+		a.mu.Lock()
+		state := map[string]any{"version": version, "connected": a.connected, "printers": a.printers, "jobs": a.recent}
+		a.mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		_ = json.NewEncoder(w).Encode(state)
+	})
+	mux.HandleFunc("/api/flip", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "POST only", http.StatusMethodNotAllowed)
+			return
+		}
+		if !a.flipDone(r.URL.Query().Get("job")) {
+			http.Error(w, "That job is not waiting for its back sides", http.StatusConflict)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	})
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	_ = srv.Serve(ln)

@@ -1,12 +1,12 @@
 'use client';
 
-import { ChevronDown, ChevronUp, Download, Layers, FileCheck2, Monitor, Plus, Printer, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Download, ExternalLink, Layers, FileCheck2, Monitor, Plus, Printer, RefreshCw, Settings2, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { PageHeader } from '@/components/app-shell';
-import { Badge, Button, Card, Dot, Empty, Modal, Skeleton, useToast } from '@/components/ui';
+import { Badge, Button, Card, Dot, Empty, Field, Input, Modal, Skeleton, useToast } from '@/components/ui';
 import { api } from '@/lib/api';
 import { cx, timeAgo } from '@/lib/format';
-import { useShop } from '../shop-context';
+import { useShop, type PrinterSetting, type ShopData as Shop } from '../shop-context';
 
 interface Device {
   id: string;
@@ -15,7 +15,25 @@ interface Device {
   version: string;
   online: boolean;
   lastSeenAt?: string;
-  printers: { name: string; status: string; isDefault: boolean; duplex?: boolean; trays?: string[] }[];
+  printers: AgentPrinter[];
+}
+
+interface AgentPrinter {
+  name: string;
+  status: string;
+  isDefault: boolean;
+  duplex?: boolean;
+  trays?: string[];
+  driver?: string;
+  location?: string;
+  comment?: string;
+}
+
+/** How a printer prints both sides. Mirrors sidesOf() in the API. */
+function sidesOf(p: AgentPrinter, shop: Shop): 'auto' | 'manual' | 'off' {
+  const chosen = shop.printerSettings.find((s) => s.printer === p.name)?.sides;
+  if (chosen) return chosen;
+  return (shop.printers.duplex.length ? shop.printers.duplex.includes(p.name) : p.duplex) ? 'auto' : 'off';
 }
 
 const PRINTER_STATUS: Record<string, { label: string; tone: 'ok' | 'bad' | 'warn' | 'neutral' }> = {
@@ -70,6 +88,24 @@ export default function PrintersPage() {
   }, [load]);
 
   const allPrinters = [...new Set((devices ?? []).flatMap((d) => d.printers.map((p) => p.name)))];
+  const labelOf = (name: string) => shop.printerSettings.find((s) => s.printer === name)?.label || name;
+  const [settingsFor, setSettingsFor] = useState<{ device: Device; printer: AgentPrinter } | null>(null);
+  const [refreshing, setRefreshing] = useState<string | null>(null);
+
+  /** Ask the PC to read its printers again, then show what it found. */
+  async function refresh(d: Device) {
+    setRefreshing(d.id);
+    try {
+      await api(`/api/shop/devices/${d.id}/refresh`, { method: 'POST' });
+      await new Promise((r) => setTimeout(r, 2500));
+      await load();
+      toast('Printer list updated');
+    } catch (e) {
+      toast((e as Error).message, 'bad');
+    } finally {
+      setRefreshing(null);
+    }
+  }
   const same = (a: string[], b: string[]) => a.length === b.length && a.every((p) => b.includes(p));
   const dirty = (['bw', 'color', 'duplex', 'photo'] as const).some((k) => !same(routing[k], shop.printers[k]));
   const [trayPrinter, setTrayPrinter] = useState<{ name: string; trays: string[] } | null>(null);
@@ -90,7 +126,7 @@ export default function PrintersPage() {
   async function test(d: Device, printer: string) {
     try {
       await api(`/api/shop/devices/${d.id}/test`, { method: 'POST', json: { printer } });
-      toast(`Test page sent to ${printer}`);
+      toast(`Test page sent to ${labelOf(printer)}`);
     } catch (e) {
       toast((e as Error).message, 'bad');
     }
@@ -126,12 +162,11 @@ export default function PrintersPage() {
       {/* Routing */}
       <Card className="mb-6 p-5 sm:p-6">
         <h2 className="text-lg font-bold">Which printers print what</h2>
-        <p className="mt-1 text-sm text-ink-mute">Tick one or more for each type. Jobs go to the ready printer with the least work, and skip one that is jammed or out of paper. With none ticked, the PC&rsquo;s default printer is used for B/W and colour.</p>
-        <div className="mt-5 grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
-          <PrinterPicker title="Black & white jobs" value={routing.bw} all={allPrinters} onChange={(bw) => setRouting({ ...routing, bw })} />
-          <PrinterPicker title="Colour jobs" hint={!shop.rates.colorEnabled ? 'Colour printing is switched off in Settings.' : undefined} value={routing.color} all={allPrinters} onChange={(color) => setRouting({ ...routing, color })} />
-          <PrinterPicker title="Both-sides jobs" emptyHint="Automatic: printers Windows says can do it" hint={!shop.rates.duplexEnabled ? 'Printing on both sides is switched off in Settings.' : undefined} value={routing.duplex} all={allPrinters} onChange={(duplex) => setRouting({ ...routing, duplex })} />
-          <PrinterPicker title="Passport photos" emptyHint="Automatic: the colour printers" hint={!shop.photos.enabled ? 'Passport photos are switched off in Settings.' : undefined} value={routing.photo} all={allPrinters} onChange={(photo) => setRouting({ ...routing, photo })} />
+        <p className="mt-1 text-sm text-ink-mute">Tick one or more for each type. Jobs go to the ready printer with the least work, and skip one that is jammed or out of paper. With none ticked, the PC&rsquo;s default printer is used for B/W and colour. Set each printer&rsquo;s name and both-sides printing with its Settings button below.</p>
+        <div className="mt-5 grid gap-4 md:grid-cols-3">
+          <PrinterPicker title="Black & white jobs" value={routing.bw} all={allPrinters} labelOf={labelOf} onChange={(bw) => setRouting({ ...routing, bw })} />
+          <PrinterPicker title="Colour jobs" hint={!shop.rates.colorEnabled ? 'Colour printing is switched off in Settings.' : undefined} value={routing.color} all={allPrinters} labelOf={labelOf} onChange={(color) => setRouting({ ...routing, color })} />
+          <PrinterPicker title="Passport photos" emptyHint="Automatic: the colour printers" hint={!shop.photos.enabled ? 'Passport photos are switched off in Settings.' : undefined} value={routing.photo} all={allPrinters} labelOf={labelOf} onChange={(photo) => setRouting({ ...routing, photo })} />
         </div>
         {dirty && (
           <div className="mt-5 flex justify-end gap-2">
@@ -188,30 +223,51 @@ export default function PrintersPage() {
                     {d.os && ` · ${d.os}`}
                   </p>
                 </div>
+                <Button variant="ghost" size="sm" loading={refreshing === d.id} disabled={!d.online} icon={<RefreshCw className="size-4" />} onClick={() => refresh(d)}>
+                  Refresh
+                </Button>
                 <button onClick={() => remove(d)} className="grid size-9 place-items-center rounded-lg text-ink-mute hover:bg-bad-soft hover:text-bad" aria-label="Disconnect PC" title="Disconnect PC">
                   <Trash2 className="size-4" />
                 </button>
               </div>
+              {d.id === thisPc && desktop?.addPrinter && (
+                <div className="flex flex-wrap items-center gap-2 border-b border-line bg-paper px-5 py-3">
+                  <p className="mr-auto text-sm text-ink-mute">New printer? Add it in Windows, then press Refresh.</p>
+                  <Button variant="secondary" size="sm" icon={<Plus className="size-4" />} onClick={() => desktop.addPrinter?.()}>
+                    Add a printer
+                  </Button>
+                  <Button variant="ghost" size="sm" icon={<ExternalLink className="size-4" />} onClick={() => desktop.printerSettings?.()}>
+                    Windows printers
+                  </Button>
+                </div>
+              )}
               <ul className="divide-y divide-line">
                 {d.printers.length === 0 && <li className="px-5 py-4 text-sm text-ink-mute">No printers found on this PC. Install the printer driver in Windows first.</li>}
                 {d.printers.map((p) => {
                   const s = PRINTER_STATUS[p.status] ?? PRINTER_STATUS.error!;
                   const roles = [shop.printers.bw.includes(p.name) && 'B/W', shop.printers.color.includes(p.name) && 'Colour'].filter(Boolean);
-                  const bothSides = shop.printers.duplex.length ? shop.printers.duplex.includes(p.name) : p.duplex;
+                  const sides = sidesOf(p, shop);
+                  const label = labelOf(p.name);
+                  const windowsNote = [label !== p.name && p.name, p.driver && p.driver !== p.name && p.driver, p.location, p.comment].filter(Boolean).join(' · ');
                   return (
                     <li key={p.name} className="flex items-center gap-3 px-5 py-3">
                       <Printer className="size-4.5 shrink-0 text-ink-mute" />
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold">{p.name}</p>
+                        <p className="truncate text-sm font-semibold">{label}</p>
+                        {windowsNote && <p className="truncate text-xs text-ink-mute" title={windowsNote}>{windowsNote}</p>}
                         <div className="mt-1 flex flex-wrap gap-1.5">
                           <Badge tone={d.online ? s.tone : 'neutral'}>{d.online ? s.label : 'PC offline'}</Badge>
                           {p.isDefault && <Badge>Default</Badge>}
-                          {bothSides && <Badge tone="cyan">Both sides</Badge>}
+                          {sides === 'auto' && <Badge tone="cyan">Both sides</Badge>}
+                          {sides === 'manual' && <Badge tone="cyan">Both sides by hand</Badge>}
                           {shop.trays.some((t) => t.printer === p.name && (t.docs.length || t.photos.length)) && <Badge tone="ink">Tray order set</Badge>}
                           {roles.map((r) => <Badge key={String(r)} tone="ink">{r} jobs</Badge>)}
                         </div>
                       </div>
                       <div className="flex shrink-0 flex-col gap-1.5 sm:flex-row">
+                        <Button variant="ghost" size="sm" icon={<Settings2 className="size-4" />} onClick={() => setSettingsFor({ device: d, printer: p })}>
+                          Settings
+                        </Button>
                         {Boolean(p.trays?.length) && (
                           <Button variant="ghost" size="sm" icon={<Layers className="size-4" />} onClick={() => setTrayPrinter({ name: p.name, trays: p.trays! })}>
                             Trays
@@ -232,8 +288,100 @@ export default function PrintersPage() {
       )}
 
       {trayPrinter && <TrayModal printer={trayPrinter} onClose={() => setTrayPrinter(null)} />}
+      {settingsFor && <PrinterModal device={settingsFor.device} printer={settingsFor.printer} onClose={() => setSettingsFor(null)} />}
       <PairModal open={pairOpen} onClose={() => { setPairOpen(false); void load(); }} />
     </>
+  );
+}
+
+const SIDES: { value: PrinterSetting['sides']; title: string; text: string }[] = [
+  { value: 'auto', title: 'Automatic', text: 'The printer turns the paper over by itself.' },
+  { value: 'manual', title: 'By hand', text: 'Fronts print first. Then the shop PC asks you to put the pages back in the tray, and prints the backs.' },
+  { value: 'off', title: 'Off', text: 'Never send both-sides jobs to this printer.' },
+];
+
+/** One printer's own settings: the shop's name for it and how it prints both sides. */
+function PrinterModal({ device, printer, onClose }: { device: Device; printer: AgentPrinter; onClose: () => void }) {
+  const { shop, setShop } = useShop();
+  const toast = useToast();
+  const saved = shop.printerSettings.find((s) => s.printer === printer.name);
+  const [label, setLabel] = useState(saved?.label ?? '');
+  const [sides, setSides] = useState<PrinterSetting['sides']>(sidesOf(printer, shop));
+  const [reverseBacks, setReverseBacks] = useState(saved?.reverseBacks ?? false);
+  const [busy, setBusy] = useState<'save' | 'test' | null>(null);
+
+  async function save(thenTest: boolean) {
+    setBusy(thenTest ? 'test' : 'save');
+    try {
+      const printerSettings = [...shop.printerSettings.filter((s) => s.printer !== printer.name), { printer: printer.name, label: label.trim(), sides, reverseBacks }];
+      const r = await api('/api/shop', { method: 'PATCH', json: { printerSettings } });
+      setShop(r.shop);
+      if (thenTest) {
+        await api(`/api/shop/devices/${device.id}/test`, { method: 'POST', json: { printer: printer.name, bothSides: true } });
+        toast(sides === 'manual' ? 'Test sent. The shop PC will ask you to turn the pages over.' : 'Both-sides test sent');
+      } else {
+        toast('Printer settings saved');
+        onClose();
+      }
+    } catch (e) {
+      toast((e as Error).message, 'bad');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Printer settings" wide>
+      <p className="text-sm text-ink-mute">
+        Windows name: <span className="font-semibold text-ink">{printer.name}</span>
+        {printer.driver && printer.driver !== printer.name && <> · {printer.driver}</>}
+        {printer.location && <> · {printer.location}</>}
+      </p>
+      <Field label="Your name for this printer" hint="Shown in the dashboard and on the shop PC. Leave empty to use the Windows name." className="mt-5">
+        <Input value={label} maxLength={40} placeholder={printer.name} onChange={(e) => setLabel(e.target.value)} />
+      </Field>
+
+      <p className="mt-6 text-sm font-semibold">Printing on both sides</p>
+      <p className="mt-1 text-xs text-ink-mute">
+        Windows says this printer {printer.duplex ? 'can' : 'cannot'} print both sides by itself. If both-sides jobs come out as separate pages, choose By hand.
+      </p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        {SIDES.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            onClick={() => setSides(o.value)}
+            className={cx('rounded-xl border p-3 text-left transition', sides === o.value ? 'border-ink bg-paper ring-1 ring-ink' : 'border-line hover:border-line-strong')}
+          >
+            <p className="text-sm font-bold">{o.title}</p>
+            <p className="mt-1 text-xs text-ink-mute">{o.text}</p>
+          </button>
+        ))}
+      </div>
+      {sides === 'manual' && (
+        <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-line p-3 text-sm">
+          <input type="checkbox" className="mt-0.5 size-4 accent-[#0b1220]" checked={reverseBacks} onChange={(e) => setReverseBacks(e.target.checked)} />
+          <span>
+            <span className="font-semibold">Print the backs last page first</span>
+            <span className="mt-0.5 block text-xs text-ink-mute">Turn this on if the test puts page 4 behind page 1.</span>
+          </span>
+        </label>
+      )}
+      {sides !== 'off' && (
+        <p className="mt-3 text-xs text-ink-mute">Print the both-sides test: 2 sheets with pages 1 to 4. Page 2 should be behind page 1, the same way up.</p>
+      )}
+
+      <div className="mt-6 flex flex-wrap justify-end gap-2">
+        {sides !== 'off' && (
+          <Button variant="secondary" loading={busy === 'test'} disabled={busy !== null || !device.online} icon={<FileCheck2 className="size-4" />} onClick={() => save(true)}>
+            Save and print test
+          </Button>
+        )}
+        <Button loading={busy === 'save'} disabled={busy !== null} onClick={() => save(false)}>
+          Save
+        </Button>
+      </div>
+    </Modal>
   );
 }
 
@@ -325,7 +473,7 @@ function TrayList({ title, all, value, onChange }: { title: string; all: string[
   );
 }
 
-function PrinterPicker({ title, hint, emptyHint, value, all, onChange }: { title: string; hint?: string; emptyHint?: string; value: string[]; all: string[]; onChange: (v: string[]) => void }) {
+function PrinterPicker({ title, hint, emptyHint, value, all, labelOf, onChange }: { title: string; hint?: string; emptyHint?: string; value: string[]; all: string[]; labelOf: (name: string) => string; onChange: (v: string[]) => void }) {
   // A printer can be assigned while its PC is off, so it stays listed.
   const names = [...new Set([...all, ...value])];
   return (
@@ -339,7 +487,7 @@ function PrinterPicker({ title, hint, emptyHint, value, all, onChange }: { title
           return (
             <label key={p} className={cx('flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 text-sm font-semibold transition', on ? 'border-ink bg-paper' : 'border-line hover:border-line-strong')}>
               <input type="checkbox" className="size-4 accent-[#0b1220]" checked={on} onChange={() => onChange(on ? value.filter((x) => x !== p) : [...value, p])} />
-              <span className="min-w-0 flex-1 truncate">{p}</span>
+              <span className="min-w-0 flex-1 truncate" title={p}>{labelOf(p)}</span>
               {!all.includes(p) && <Badge>Not connected</Badge>}
             </label>
           );

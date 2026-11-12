@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { PDFDocument, type PDFPage } from 'pdf-lib';
 import sharp from 'sharp';
 import type { PageChoice } from '@seedhaprint/shared';
-import { appendPdf, DocumentError, layoutForPrint, makePrintReady, normalizePhoto, photoSheet } from '../src/documents';
+import { appendPdf, DocumentError, layoutForPrint, makePrintReady, normalizePhoto, photoSheet, sideOfJob } from '../src/documents';
 
 test('PDFs pass through untouched with their page count', async () => {
   const doc = await PDFDocument.create();
@@ -78,4 +78,15 @@ test('a passport photo sheet is the real paper size with every photo on it', asy
   const page = pdf.getPage(0);
   assert.equal(Math.round((page.getWidth() / 72) * 25.4 * 10) / 10, 101.6);
   assert.equal(Math.round((page.getHeight() / 72) * 25.4 * 10) / 10, 152.4);
+});
+
+test('both sides by hand: fronts and backs pair up for every copy', async () => {
+  // Pages told apart by width: 501, 502, 503. A4 width means the blank back added to an odd count.
+  const doc = await PDFDocument.create();
+  for (let i = 1; i <= 3; i++) doc.addPage([500 + i, 800]).drawText(String(i));
+  const pdf = Buffer.from(await doc.save());
+  const widths = async (b: Buffer) => (await PDFDocument.load(b)).getPages().map((p) => Math.round(p.getWidth()));
+  assert.deepEqual(await widths(await sideOfJob(pdf, 2, 'front')), [501, 503, 501, 503]);
+  assert.deepEqual(await widths(await sideOfJob(pdf, 2, 'back')), [502, 595, 502, 595]);
+  assert.deepEqual(await widths(await sideOfJob(pdf, 2, 'back', true)), [595, 502, 595, 502]);
 });

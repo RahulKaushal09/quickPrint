@@ -29,7 +29,7 @@ const NEXT: Record<JobStatus, readonly JobStatus[]> = {
   queued: ['sent', 'failed'],
   sent: ['queued', 'printing', 'printed', 'failed'], // back to queued when the PC drops before confirming
   printing: ['printed', 'failed'],
-  printed: ['failed'], // shop can still report a bad print
+  printed: ['failed', 'queued'], // shop can still report a bad print, or print it again
   failed: ['queued', 'refunded'], // retry, or give the money back
   refunded: [],
   expired: [],

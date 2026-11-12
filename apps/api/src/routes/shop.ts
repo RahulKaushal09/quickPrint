@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { PAID_STATUSES } from '@seedhaprint/shared';
 import { HttpError, requireShop, requireUser } from '../auth';
 import { config } from '../config';
-import { connectedHere, dispatchShop, ONLINE_WINDOW_MS, sendTestPage } from '../hub';
+import { connectedHere, dispatchShop, ONLINE_WINDOW_MS, refreshPrinters, sendTestPage, type ShopRouting } from '../hub';
 import { randomCode, refundJob, transition } from '../jobs';
 import { Device, Job, PairCode, Shop, User } from '../models';
 import { RazorpayError, verifyKeys } from '../payments';
@@ -61,6 +61,9 @@ shopRoutes.patch('/', async (req, res) => {
       rates: z.object({ bwPerPage: paise.min(50), colorPerPage: paise.min(50), colorEnabled: z.boolean(), duplexEnabled: z.boolean() }),
       printers: z.object({ bw: names, color: names, duplex: names, photo: names.default([]) }),
       trays: z.array(z.object({ printer: z.string().min(1).max(200), docs: names, photos: names })).max(40),
+      printerSettings: z
+        .array(z.object({ printer: z.string().min(1).max(200), label: z.string().trim().max(40), sides: z.enum(['', 'auto', 'manual', 'off']), reverseBacks: z.boolean() }))
+        .max(40),
       photos: z.object({ enabled: z.boolean(), size: z.enum(['35x45', '51x51']), paper: z.enum(['4x6', 'A4']), perSheet: z.number().int().min(1).max(60), price: paise.min(100) }),
       cash: z.object({ enabled: z.boolean(), autoPrint: z.boolean() }),
     })
@@ -69,7 +72,7 @@ shopRoutes.patch('/', async (req, res) => {
   const shop = await myShop(req.shopId!);
   shop.set(body);
   await shop.save();
-  if (body.printers || body.accepting) void dispatchShop(shop._id);
+  if (body.printers || body.printerSettings || body.accepting) void dispatchShop(shop._id);
   res.json({ shop });
 });
 
@@ -145,6 +148,20 @@ shopRoutes.post('/jobs/:id/retry', async (req, res) => {
   if (!job.file.key) throw new HttpError(410, 'The file was already deleted');
   const next = await transition(job._id, 'queued', { only: ['failed'], note: 'Retry by shop', set: { error: '', waiting: '', deviceId: null, acceptedAt: null, triedPrinters: [] } });
   if (!next) throw new HttpError(409, 'Only failed jobs can be retried');
+  void dispatchShop(job.shopId);
+  res.json({ job: shopJob(next) });
+});
+
+/** Print a finished job once more, e.g. the customer wants an extra copy or a page came out badly. No new charge. */
+shopRoutes.post('/jobs/:id/reprint', async (req, res) => {
+  const job = await myJob(req.shopId!, String(req.params.id));
+  if (!job.file.key) throw new HttpError(410, 'The file was already deleted');
+  const next = await transition(job._id, 'queued', {
+    only: ['printed'],
+    note: 'Printed again by shop',
+    set: { error: '', waiting: '', deviceId: null, acceptedAt: null, triedPrinters: [], run: (job.run ?? 0) + 1 },
+  });
+  if (!next) throw new HttpError(409, 'Only printed jobs can be printed again');
   void dispatchShop(job.shopId);
   res.json({ job: shopJob(next) });
 });
@@ -235,12 +252,20 @@ shopRoutes.delete('/devices/:id', async (req, res) => {
 });
 
 shopRoutes.post('/devices/:id/test', async (req, res) => {
-  const { printer } = z.object({ printer: z.string().min(1) }).parse(req.body);
+  const { printer, bothSides } = z.object({ printer: z.string().min(1), bothSides: z.boolean().default(false) }).parse(req.body);
   const device = await Device.findOne({ _id: req.params.id, shopId: req.shopId, revoked: false });
   if (!device) throw new HttpError(404, 'PC not found');
   const shop = await myShop(req.shopId!);
-  if (!connectedHere(String(device._id)) || !sendTestPage(String(device._id), printer, shop.code)) {
+  if (!connectedHere(String(device._id)) || !sendTestPage(String(device._id), printer, shop.code, shop as ShopRouting, bothSides)) {
     throw new HttpError(409, 'This PC is not connected right now');
   }
+  res.json({ ok: true });
+});
+
+/** Read the PC's printers again, e.g. right after one was added in Windows. */
+shopRoutes.post('/devices/:id/refresh', async (req, res) => {
+  const device = await Device.findOne({ _id: req.params.id, shopId: req.shopId, revoked: false });
+  if (!device) throw new HttpError(404, 'PC not found');
+  if (!connectedHere(String(device._id)) || !refreshPrinters(String(device._id))) throw new HttpError(409, 'This PC is not connected right now');
   res.json({ ok: true });
 });

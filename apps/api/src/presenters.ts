@@ -23,7 +23,7 @@ export const shopCanSell = (shop: { active?: boolean | null; subscription?: { fe
 
 export async function publicShop(shop: ShopDoc) {
   const { online, printers } = await shopStatus(shop._id);
-  const can = (mode: string, sides: string, kind = 'document') => printers.some((p) => printerFits(p, { mode, sides, kind }, shop.printers));
+  const can = (mode: string, sides: string, kind = 'document') => printers.some((p) => printerFits(p, { mode, sides, kind }, shop));
   return {
     code: shop.code,
     name: shop.name,

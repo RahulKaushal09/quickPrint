@@ -12,6 +12,11 @@ export interface AgentPrinter {
   duplex?: boolean;
   /** Paper trays the driver names, e.g. "Tray 1", "Manual Feed". */
   trays?: string[];
+  /** The Windows driver, which names the printer model. */
+  driver?: string;
+  /** Location and comment the owner may have typed in Windows. */
+  location?: string;
+  comment?: string;
 }
 
 /** Agent → server */
@@ -33,6 +38,12 @@ export interface JobOrder {
   copies: number;
   color: boolean;
   duplex: boolean;
+  /** Both sides by hand: the file comes in two halves (?side=front, ?side=back) with copies inside, and the shop turns the stack over in between. */
+  manualDuplex?: boolean;
+  /** Counts reprints, so the PC prints a job again instead of skipping it as already printed. */
+  run?: number;
+  /** The shop's own name for the printer, shown on the shop PC. */
+  printerLabel?: string;
   kind?: 'photo';
   /** Photos: 'A4', or '4x6' for the driver's own photo paper. */
   paper?: string;
@@ -50,4 +61,6 @@ export type ServerMessage =
   | { type: 'welcome'; deviceId: string; shopName: string; shopCode: string }
   | { type: 'job'; job: JobOrder } // test pages use the same shape with a jobId starting 'test-'
   | { type: 'pong' }
+  /** Read the printer list again now (a printer was just added in Windows). */
+  | { type: 'refresh' }
   | { type: 'error'; error: string };

@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unsafe"
@@ -77,14 +78,25 @@ func defaultPrinter() string {
 	return syscall.UTF16ToString(buf)
 }
 
-// Asking a driver can be slow, and the answers don't change, so each printer is asked once.
+// Asking a driver can be slow, and the answers rarely change, so each printer
+// is asked once, until the shop presses Refresh.
 var (
+	capsMu      sync.Mutex
 	duplexCache = map[string]bool{}
 	trayCache   = map[string][]string{}
 )
 
+func forgetPrinterDetails() {
+	capsMu.Lock()
+	duplexCache = map[string]bool{}
+	trayCache = map[string][]string{}
+	capsMu.Unlock()
+}
+
 // trays lists the paper sources the driver names, e.g. "Tray 1", "Manual Feed".
 func trays(name, port string) []string {
+	capsMu.Lock()
+	defer capsMu.Unlock()
 	if v, ok := trayCache[name]; ok {
 		return v
 	}
@@ -107,6 +119,8 @@ func trays(name, port string) []string {
 }
 
 func canDuplex(name, port string) bool {
+	capsMu.Lock()
+	defer capsMu.Unlock()
 	if v, ok := duplexCache[name]; ok {
 		return v
 	}
@@ -141,7 +155,10 @@ func listPrinters() ([]Printer, error) {
 			continue
 		}
 		port := utf16ptr(p.PortName)
-		out = append(out, Printer{Name: name, Status: printerStatus(p.Status, p.Attributes), IsDefault: name == def, Duplex: canDuplex(name, port), Trays: trays(name, port)})
+		out = append(out, Printer{
+			Name: name, Status: printerStatus(p.Status, p.Attributes), IsDefault: name == def, Duplex: canDuplex(name, port), Trays: trays(name, port),
+			Driver: utf16ptr(p.DriverName), Location: strings.TrimSpace(utf16ptr(p.Location)), Comment: strings.TrimSpace(utf16ptr(p.Comment)),
+		})
 	}
 	return out, nil
 }
