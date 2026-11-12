@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, CircleAlert, Copy, ExternalLink, ShieldCheck } from 'lucide-react';
+import { Check, CircleAlert, Copy, ExternalLink, Globe, ShieldCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { PageHeader } from '@/components/app-shell';
 import { Badge, Button, Card, Field, Input, Skeleton, useToast } from '@/components/ui';
@@ -53,6 +53,8 @@ export default function PaymentsPage() {
     toast('Razorpay disconnected');
   }
 
+  // Customers pay on this site, so Razorpay must know it. Otherwise it blocks every live payment.
+  const site = typeof window !== 'undefined' ? window.location.origin : '';
   const copy = (text: string, label: string) => navigator.clipboard.writeText(text).then(() => toast(`${label} copied`));
 
   if (!data) return <Skeleton className="h-96" />;
@@ -119,6 +121,9 @@ export default function PaymentsPage() {
                 Open <b className="text-ink">Account &amp; Settings → API Keys</b> and click <b className="text-ink">Generate Key</b>.
               </>,
               <>Copy the Key ID and Key Secret into this page. Razorpay shows the secret only once, so save it safely.</>,
+              <>
+                Add <b className="text-ink">{site.replace(/^https?:\/\//, '')}</b> as a website of your business in Razorpay (see below). Without it, Razorpay blocks every payment.
+              </>,
             ].map((t, i) => (
               <li key={i} className="flex gap-3">
                 <span className="grid size-6 shrink-0 place-items-center rounded-full bg-ink text-xs font-bold text-white">{i + 1}</span>
@@ -136,6 +141,43 @@ export default function PaymentsPage() {
           </p>
         </Card>
       </div>
+
+      <Card className="mt-6 p-5 sm:p-6">
+        <div className="flex items-start gap-3">
+          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-cyan-soft text-cyan">
+            <Globe className="size-5" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg font-bold">Allow payments on {site.replace(/^https?:\/\//, '')}</h2>
+            <p className="mt-1 text-sm text-ink-soft">
+              Your customers pay on this website, not on your own. Razorpay only accepts live payments from websites listed in your account, and shows customers{' '}
+              <b className="text-ink">&ldquo;Payment blocked as website does not match registered website(s)&rdquo;</b> until it is added.
+            </p>
+          </div>
+        </div>
+        <ol className="mt-4 space-y-3 text-sm text-ink-soft">
+          {[
+            <>
+              In Razorpay, switch to <b className="text-ink">Live mode</b> and open <b className="text-ink">Account &amp; Settings → Business website details</b>.
+            </>,
+            <>
+              Under <b className="text-ink">Additional business website/app</b>, click <b className="text-ink">+</b>, paste the address below, and say it is your shop&rsquo;s online ordering and payment page.
+            </>,
+            <>Razorpay approves it, usually within 1 to 2 working days. Until then, take cash orders. If you can&rsquo;t find the option, ask Razorpay support to add this website to your account.</>,
+          ].map((t, i) => (
+            <li key={i} className="flex gap-3">
+              <span className="grid size-6 shrink-0 place-items-center rounded-full bg-ink text-xs font-bold text-white">{i + 1}</span>
+              <span className="pt-0.5">{t}</span>
+            </li>
+          ))}
+        </ol>
+        <div className="mt-4 flex max-w-xl items-center gap-2 rounded-xl bg-paper py-1 pl-3 pr-1">
+          <code className="min-w-0 flex-1 truncate font-mono text-sm">{site}</code>
+          <Button variant="ghost" size="sm" icon={<Copy className="size-4" />} onClick={() => copy(site, 'Website address')}>
+            Copy
+          </Button>
+        </div>
+      </Card>
 
       {data.connected && (
         <Card className="mt-6 p-5 sm:p-6">

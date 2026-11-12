@@ -73,7 +73,7 @@ export default function OverviewPage() {
     { done: (data?.devices.length ?? 0) > 0, label: 'Install the app on your shop PC', href: '/dashboard/printers', icon: Download },
     { done: hasPrinter, label: 'Connect it and check your printers', href: '/dashboard/printers', icon: Printer },
     { done: shop.printers.bw.length > 0 || shop.printers.color.length > 0, label: 'Choose which printers do B/W and colour', href: '/dashboard/printers', icon: MonitorSmartphone },
-    { done: Boolean(shop.razorpay?.keyId), label: 'Connect your Razorpay account', href: '/dashboard/payments', icon: CreditCard },
+    { done: Boolean(shop.razorpay?.keyId), label: 'Connect Razorpay and add this website to it', href: '/dashboard/payments', icon: CreditCard },
     { done: (data?.today.jobs ?? 0) > 0 || (jobs?.length ?? 0) > 0, label: 'Put up your QR poster', href: '/dashboard/qr', icon: QrCode },
   ];
   const setupLeft = setupSteps.filter((s) => !s.done).length;

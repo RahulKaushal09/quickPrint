@@ -267,7 +267,7 @@ function CreateShop({ open, onClose, onCreated }: { open: boolean; onClose: () =
       {created ? (
         <div className="text-center">
           <p className="text-lg font-bold">{created.name} is live</p>
-          <p className="mt-1 text-sm text-ink-mute">Share the owner login. They connect their own Razorpay under Payments. Their QR link is:</p>
+          <p className="mt-1 text-sm text-ink-mute">Share the owner login. Under Payments they connect their own Razorpay and add this website to their Razorpay account, or online payments are blocked. Their QR link is:</p>
           <code className="mt-4 block rounded-xl bg-paper px-4 py-3 font-mono text-sm">{created.qrUrl}</code>
           <Button className="mt-6 w-full" onClick={close}>
             Done
