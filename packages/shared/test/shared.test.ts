@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { canMove, quote, rupees, sheetsFor } from '../src/index';
+import { canMove, photoLayout, photosPerSheet, quote, rupees, sheetsFor } from '../src/index';
 
 const card = { bwPerPage: 200, colorPerPage: 1000, colorEnabled: true };
 
@@ -38,4 +38,16 @@ test('double-sided printing uses half the paper, rounding up', () => {
   assert.equal(sheetsFor(5, 'single'), 5);
   assert.equal(sheetsFor(5, 'double'), 3);
   assert.equal(sheetsFor(4, 'double'), 2);
+});
+
+test('passport photos: 8 fit on 4x6 paper by turning them sideways, 6 upright', () => {
+  assert.equal(photosPerSheet('4x6', '35x45'), 8);
+  const six = photoLayout('4x6', '35x45', 6);
+  assert.equal(six.slots.length, 6);
+  assert.ok(six.slots.every((s) => !s.turned));
+  const eight = photoLayout('4x6', '35x45', 8);
+  assert.equal(eight.slots.length, 8);
+  assert.ok(eight.slots.every((s) => s.turned && s.w === 45 && s.h === 35));
+  for (const s of eight.slots) assert.ok(s.x >= 3 && s.y >= 3 && s.x + s.w <= 101.6 - 3 && s.y + s.h <= 152.4 - 3);
+  assert.ok(photosPerSheet('A4', '35x45') >= 30);
 });

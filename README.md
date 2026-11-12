@@ -105,6 +105,23 @@ Every shop connects its own Razorpay account, so customers pay the shop directly
 - Without keys, a shop's customers can't pay. `ALLOW_TEST_CHECKOUT=true` turns on a fake checkout for testing, and it prints for free, so keep it off in production. Razorpay test keys are the safer way to test a shop.
 - A later upgrade: Razorpay's Technology Partner OAuth gives a one-click "Connect Razorpay", once Razorpay approves the platform as a partner.
 
+## Trays and running out of paper
+
+Each printer's trays come from Windows. On **Printers → Trays** the shop ticks the trays to use, in order, separately for documents and passport photos.
+
+- A job starts on the first tray. The agent watches the Windows print queue: if the job stops on an empty tray (or another problem) for 25 seconds **before any page has printed**, it removes the job from the queue and tries the next tray, then reports it. The shop sees the note on the job.
+- When every tray of that printer is empty, the job moves to another printer that can take it. With none left, it fails with the reason, and **Print again** after a refill prints it.
+- If paper runs out **part way through**, the job stays in the queue and finishes after a refill. Sending it elsewhere would print those pages twice.
+- Not every printer tells Windows when a tray is empty, and some cheap USB printers skip the queue entirely. Test each printer once with a tray empty.
+
+## Passport photos
+
+Off by default; the shop turns it on in **Settings → Passport photos** and picks the paper (4 × 6 inch or A4), the photo size (35 × 45 mm or 51 × 51 mm), how many go on a sheet and the price per sheet. On 4 × 6 paper, 6 photos fit upright and 8 fit turned sideways.
+
+The customer takes or chooses one photo, drags and zooms it to fit the face in the frame, sees the whole sheet, and pays online or cash. The server crops it at 600 dpi and lays out the sheet with the same code as the preview (`packages/shared/src/photos.ts`). It prints at exact size (`noscale`) on the photo printers and photo trays the shop chose. For 4 × 6 paper, set that printer's paper size to 4 × 6 in Windows.
+
+There is no background removal yet: customers should stand in front of a plain light wall.
+
 ## Cash
 
 Customers can choose cash when the shop allows it (**Settings → Accept cash**). The **Print cash orders directly** switch on the overview decides what happens next:

@@ -48,11 +48,11 @@ async function cleanup() {
     'file.key': { $ne: '' },
     $or: [{ status: 'expired' }, { status: { $in: ['printed', 'refunded'] }, updatedAt: { $lt: fileCutoff } }],
   })
-    .select('file.key')
+    .select('file.key file.sourceKey')
     .limit(500);
   for (const j of done) {
-    await storage.remove(j.file.key!).catch(() => {});
-    await Job.updateOne({ _id: j._id }, { 'file.key': '', 'file.deletedAt': new Date() });
+    for (const key of new Set([j.file.key, j.file.sourceKey])) if (key) await storage.remove(key).catch(() => {});
+    await Job.updateOne({ _id: j._id }, { 'file.key': '', 'file.sourceKey': '', 'file.deletedAt': new Date() });
   }
 }
 setInterval(() => void cleanup().catch((e) => console.error('[cleanup]', e)), 5 * 60_000).unref();

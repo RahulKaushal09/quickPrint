@@ -21,6 +21,21 @@ const printersSchema = new Schema(
     color: { type: [String], default: [] },
     /** Printers allowed to print both sides. Empty = whichever ones Windows reports can do it. */
     duplex: { type: [String], default: [] },
+    /** Printers for passport photos. Empty = the colour printers. */
+    photo: { type: [String], default: [] },
+  },
+  sub,
+);
+/** A printer's trays in order of preference, separately for documents and photos. */
+const traySchema = new Schema({ printer: { type: String, required: true }, docs: { type: [String], default: [] }, photos: { type: [String], default: [] } }, sub);
+const photosSchema = new Schema(
+  {
+    enabled: { type: Boolean, required: true, default: false },
+    size: { type: String, enum: ['35x45', '51x51'], required: true, default: '35x45' },
+    paper: { type: String, enum: ['4x6', 'A4'], required: true, default: '4x6' },
+    perSheet: { type: Number, required: true, default: 8 },
+    /** Paise for one sheet of photos. */
+    price: { type: Number, required: true, default: 5000 },
   },
   sub,
 );
@@ -57,6 +72,8 @@ const shopSchema = new Schema(
     printers: { type: printersSchema, default: () => ({}) },
     razorpay: { type: razorpaySchema, default: () => ({}) },
     cash: { type: cashSchema, default: () => ({}) },
+    trays: { type: [traySchema], default: [] },
+    photos: { type: photosSchema, default: () => ({}) },
   },
   { timestamps: true },
 );
@@ -92,6 +109,7 @@ const deviceSchema = new Schema(
         status: String,
         isDefault: Boolean,
         duplex: Boolean,
+        trays: [String],
       },
     ],
     online: { type: Boolean, default: false },
@@ -115,6 +133,8 @@ const fileSchema = new Schema(
     name: { type: String, required: true },
     bytes: Number,
     pages: { type: Number, required: true },
+    /** Photos: the customer's original picture, kept until the job is done. */
+    sourceKey: { type: String, default: '' },
     deletedAt: Date,
   },
   sub,
@@ -131,6 +151,8 @@ const jobSchema = new Schema(
     file: { type: fileSchema, required: true },
     mode: { type: String, enum: ['bw', 'color'], required: true },
     copies: { type: Number, required: true },
+    kind: { type: String, enum: ['document', 'photo'], default: 'document' },
+    photo: { _id: false, size: String, paper: String, perSheet: Number },
     sides: { type: String, enum: ['single', 'double'], default: 'single' },
     /** Chosen pages in print order, each with its turn on the upright A4 sheet. Empty = every page as uploaded. */
     pageList: [{ _id: false, p: Number, r: Number }],
@@ -147,6 +169,10 @@ const jobSchema = new Schema(
     },
     deviceId: { type: Schema.Types.ObjectId, ref: 'Device' },
     printer: { type: String, default: '' },
+    /** Printers that ran out of paper on this job before printing anything. */
+    triedPrinters: { type: [String], default: [] },
+    /** A note from the shop PC while printing, e.g. a tray ran out and the next one took over. */
+    waiting: { type: String, default: '' },
     sentAt: Date,
     acceptedAt: Date,
     printedAt: Date,

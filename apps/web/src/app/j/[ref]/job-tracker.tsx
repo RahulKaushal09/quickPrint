@@ -14,6 +14,8 @@ interface Job {
   pickupCode: string;
   file: { name: string; pages: number };
   mode: 'bw' | 'color';
+  kind: 'document' | 'photo';
+  photo?: { perSheet: number };
   sides: Sides;
   cash: boolean;
   copies: number;
@@ -175,7 +177,9 @@ export function JobTracker({ jobRef }: { jobRef: string }) {
           <div className="min-w-0 flex-1">
             <p className="truncate font-semibold">{job.file.name}</p>
             <p className="text-ink-mute">
-              {plural(job.file.pages, 'page')} × {plural(job.copies, 'copy', 'copies')} · {job.mode === 'color' ? 'Colour' : 'Black & white'} · {job.sides === 'double' ? `Both sides, ${plural(sheetsFor(job.file.pages, 'double') * job.copies, 'sheet')}` : 'Single side'}
+              {job.kind === 'photo'
+                ? `${plural(job.copies, 'sheet')} of ${job.photo?.perSheet ?? ''} photos`
+                : `${plural(job.file.pages, 'page')} × ${plural(job.copies, 'copy', 'copies')} · ${job.mode === 'color' ? 'Colour' : 'Black & white'} · ${job.sides === 'double' ? `Both sides, ${plural(sheetsFor(job.file.pages, 'double') * job.copies, 'sheet')}` : 'Single side'}`}
             </p>
           </div>
           <p className="font-mono text-lg font-bold tabular">{rupees(job.total)}</p>

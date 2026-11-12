@@ -1,6 +1,14 @@
 'use client';
 
 import { createContext, useContext } from 'react';
+import type { PhotoPaper, PhotoSize } from '@seedhaprint/shared';
+
+/** A printer's trays in order of preference. */
+export interface TrayOrder {
+  printer: string;
+  docs: string[];
+  photos: string[];
+}
 
 export interface ShopData {
   _id: string;
@@ -12,8 +20,10 @@ export interface ShopData {
   active: boolean;
   accepting: boolean;
   rates: { bwPerPage: number; colorPerPage: number; colorEnabled: boolean; duplexEnabled: boolean };
-  printers: { bw: string[]; color: string[]; duplex: string[] };
+  printers: { bw: string[]; color: string[]; duplex: string[]; photo: string[] };
+  trays: TrayOrder[];
   cash: { enabled: boolean; autoPrint: boolean };
+  photos: { enabled: boolean; size: PhotoSize; paper: PhotoPaper; perSheet: number; price: number };
   razorpay: { keyId: string };
 }
 

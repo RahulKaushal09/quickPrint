@@ -33,6 +33,8 @@ const FAQS = [
   ['What if the paper jams or a print comes out bad?', 'Every job has a pickup code and shows on your dashboard. Report the problem, then print it again or refund the customer.'],
   ['What happens if my internet or PC goes off?', 'New customers see that the printer is offline and payment pauses, so nobody pays for a print that cannot come out. Jobs already paid wait safely and print when your PC is back.'],
   ['Are customer documents safe?', 'Each file goes only to your shop, and files are deleted automatically after printing. Uploads that are never paid for are removed too.'],
+  ['Can you make passport photos too?', 'Yes, if you switch it on. The customer takes a photo on their phone, fits the face in the frame, sees the full sheet of 6 or 8 photos, pays, and it prints on your photo printer.'],
+  ['What if a tray runs out of paper?', 'Set your trays in order for each printer. If tray 1 is empty before anything prints, tray 2 takes over, and then another printer. You see a note on the job either way.'],
   ['Can customers pay cash?', 'Yes. They choose cash and show you a pickup code. One switch decides whether cash orders print straight away or wait until you tap Cash received.'],
   ['Where does the money go?', 'Straight to you. Online payments go into your own Razorpay account and settle to your bank, and cash goes in your hand. SeedhaPrint never holds your money.'],
   ['How much does it cost?', 'Send us a message on WhatsApp with your city and what you print. We will explain the plan for your shop.'],

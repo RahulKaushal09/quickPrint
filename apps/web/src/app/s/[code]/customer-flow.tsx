@@ -9,6 +9,7 @@ import { api, ApiError, uploadFile } from '@/lib/api';
 import { cx, initials, plural, rupees } from '@/lib/format';
 import { MockCheckout } from './mock-checkout';
 import { PagePicker, type PageItem } from './page-picker';
+import { PhotoMaker, type PhotoSettings } from './photo-maker';
 
 interface Shop {
   code: string;
@@ -23,6 +24,7 @@ interface Shop {
   duplex: { bw: boolean; color: boolean };
   payments: 'razorpay' | 'test' | 'none';
   cash: boolean;
+  photos: PhotoSettings | null;
 }
 
 interface Draft {
@@ -79,6 +81,8 @@ export function CustomerFlow({ code }: { code: string }) {
   const [paying, setPaying] = useState(false);
   const [payError, setPayError] = useState('');
   const [mockOrder, setMockOrder] = useState<Order | null>(null);
+  const [mockRef, setMockRef] = useState<string | null>(null);
+  const [tab, setTab] = useState<'docs' | 'photos'>('docs');
 
   const pickRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
@@ -156,17 +160,15 @@ export function CustomerFlow({ code }: { code: string }) {
   const canPay = Boolean(shop?.open && shop.online && draft && selected.length && !uploading && (method === 'cash' ? shop.cash : online) && canPrint(mode));
   const q = selected.length && shop ? quote(shop.rates, mode, selected.length, copies) : null;
 
-  async function pay() {
-    if (!draft || !shop || !cfg) return;
+  /** Places the order: cash goes straight to the tracking page, online opens Razorpay (or the test checkout). */
+  async function checkout(ref: string, body: Record<string, unknown>) {
     setPaying(true);
     setPayError('');
     try {
-      const order = await api<Order & { cash?: boolean }>(`/api/public/jobs/${draft.ref}/checkout`, {
-        method: 'POST',
-        json: { mode, sides, copies, method, pages: selected.map(({ p, r }) => ({ p, r })) },
-      });
-      if (order.cash) return router.push(`/j/${draft.ref}`);
+      const order = await api<Order & { cash?: boolean }>(`/api/public/jobs/${ref}/checkout`, { method: 'POST', json: body });
+      if (order.cash) return router.push(`/j/${ref}`);
       if (order.mock) {
+        setMockRef(ref);
         setMockOrder(order);
         setPaying(false);
         return;
@@ -183,14 +185,14 @@ export function CustomerFlow({ code }: { code: string }) {
         modal: { ondismiss: () => setPaying(false) },
         handler: async (r: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
           try {
-            await api(`/api/public/jobs/${draft.ref}/verify`, {
+            await api(`/api/public/jobs/${ref}/verify`, {
               method: 'POST',
               json: { orderId: r.razorpay_order_id, paymentId: r.razorpay_payment_id, signature: r.razorpay_signature },
             });
           } catch {
             // The webhook will still mark it paid; the tracking page shows the real status.
           }
-          router.push(`/j/${draft.ref}`);
+          router.push(`/j/${ref}`);
         },
       });
       rzp.on('payment.failed', () => setPayError('Payment did not go through. No money was taken. Please try again.'));
@@ -201,10 +203,15 @@ export function CustomerFlow({ code }: { code: string }) {
     }
   }
 
-  async function confirmMock() {
+  function pay() {
     if (!draft) return;
-    await api(`/api/public/jobs/${draft.ref}/mock-pay`, { method: 'POST' });
-    router.push(`/j/${draft.ref}`);
+    void checkout(draft.ref, { mode, sides, copies, method, pages: selected.map(({ p, r }) => ({ p, r })) });
+  }
+
+  async function confirmMock() {
+    if (!mockRef) return;
+    await api(`/api/public/jobs/${mockRef}/mock-pay`, { method: 'POST' });
+    router.push(`/j/${mockRef}`);
   }
 
   // ------------------------------------------------------------ render
@@ -269,6 +276,37 @@ export function CustomerFlow({ code }: { code: string }) {
         </Card>
       )}
 
+      {shop.photos && (
+        <div className="mt-5 grid grid-cols-2 gap-1 rounded-2xl bg-paper-2 p-1" role="tablist">
+          {(['docs', 'photos'] as const).map((t) => (
+            <button
+              key={t}
+              role="tab"
+              aria-selected={tab === t}
+              onClick={() => setTab(t)}
+              className={cx('rounded-xl py-2.5 text-sm font-bold transition', tab === t ? 'bg-surface text-ink shadow-card' : 'text-ink-mute hover:text-ink')}
+            >
+              {t === 'docs' ? 'Documents' : 'Passport photos'}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {tab === 'photos' && shop.photos ? (
+        <PhotoMaker
+          shopCode={shop.code}
+          photos={shop.photos}
+          canTakeOrders={Boolean(shop.open && shop.online)}
+          online={online}
+          cash={shop.cash}
+          maxCopies={cfg.limits.maxCopies}
+          checkout={checkout}
+          paying={paying}
+          payError={payError}
+          OptionCard={OptionCard}
+        />
+      ) : (
+        <>
       {/* Step 1: file */}
       <section className="mt-6 animate-rise [animation-delay:60ms]">
         <StepTitle n={1} done={Boolean(draft)}>
@@ -426,6 +464,9 @@ export function CustomerFlow({ code }: { code: string }) {
           </Button>
         </div>
       </div>
+
+        </>
+      )}
 
       {mockOrder && <MockCheckout order={mockOrder} onPaid={confirmMock} onClose={() => setMockOrder(null)} />}
     </Shell>

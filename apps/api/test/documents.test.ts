@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { PDFDocument, type PDFPage } from 'pdf-lib';
 import sharp from 'sharp';
 import type { PageChoice } from '@seedhaprint/shared';
-import { appendPdf, DocumentError, layoutForPrint, makePrintReady } from '../src/documents';
+import { appendPdf, DocumentError, layoutForPrint, makePrintReady, normalizePhoto, photoSheet } from '../src/documents';
 
 test('PDFs pass through untouched with their page count', async () => {
   const doc = await PDFDocument.create();
@@ -69,4 +69,13 @@ test('uploads join into one document', async () => {
     return Buffer.from(await d.save());
   };
   assert.equal((await PDFDocument.load(await appendPdf(await make(2), await make(3)))).getPageCount(), 5);
+});
+
+test('a passport photo sheet is the real paper size with every photo on it', async () => {
+  const face = await sharp({ create: { width: 900, height: 1200, channels: 3, background: '#d4a373' } }).jpeg().toBuffer();
+  const { jpeg } = await normalizePhoto(face);
+  const pdf = await PDFDocument.load(await photoSheet(jpeg, { x: 0.1, y: 0.1, w: 0.8, h: 0.8 }, 0, '4x6', '35x45', 8));
+  const page = pdf.getPage(0);
+  assert.equal(Math.round((page.getWidth() / 72) * 25.4 * 10) / 10, 101.6);
+  assert.equal(Math.round((page.getHeight() / 72) * 25.4 * 10) / 10, 152.4);
 });

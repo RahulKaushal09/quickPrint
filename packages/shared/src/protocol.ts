@@ -10,6 +10,8 @@ export interface AgentPrinter {
   isDefault: boolean;
   /** Windows reports this printer can print both sides. */
   duplex?: boolean;
+  /** Paper trays the driver names, e.g. "Tray 1", "Manual Feed". */
+  trays?: string[];
 }
 
 /** Agent → server */
@@ -19,7 +21,10 @@ export type AgentMessage =
   | { type: 'job.accepted'; jobId: string }
   | { type: 'job.printing'; jobId: string }
   | { type: 'job.printed'; jobId: string }
-  | { type: 'job.failed'; jobId: string; error: string }
+  /** Still printing, with a note for the shop, e.g. a tray ran out and the next one took over. */
+  | { type: 'job.waiting'; jobId: string; error: string }
+  /** code 'paper_out': nothing printed, so another printer may take it. */
+  | { type: 'job.failed'; jobId: string; error: string; code?: string }
   | { type: 'ping' };
 
 export interface JobOrder {
@@ -28,6 +33,11 @@ export interface JobOrder {
   copies: number;
   color: boolean;
   duplex: boolean;
+  kind?: 'photo';
+  /** Photos: 'A4', or '4x6' for the driver's own photo paper. */
+  paper?: string;
+  /** Trays in order of preference. Empty = the printer decides. */
+  trays?: string[];
   pages: number;
   fileName: string;
   /** Path on the API, fetched with the agent's own bearer token. */

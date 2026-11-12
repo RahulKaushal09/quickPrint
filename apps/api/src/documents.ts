@@ -7,9 +7,9 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { degrees, PDFDocument, type PDFPage } from 'pdf-lib';
+import { degrees, PDFDocument, rgb, type PDFPage } from 'pdf-lib';
 import sharp from 'sharp';
-import { LIMITS, type PageChoice } from '@seedhaprint/shared';
+import { LIMITS, photoLayout, type PageChoice, type PhotoPaper, type PhotoSize } from '@seedhaprint/shared';
 import { config } from './config';
 
 const run = promisify(execFile);
@@ -149,6 +149,68 @@ export async function layoutForPrint(pdf: Buffer, choices: PageChoice[]): Promis
     out.addPage([A4.w, A4.h]).drawPage(embedded, { ...anchor, xScale: scale, yScale: scale, rotate: degrees(-angle) });
   }
   return Buffer.from(await out.save());
+}
+
+/** A customer photo, upright and a sensible size, ready to crop. */
+export async function normalizePhoto(buf: Buffer): Promise<{ jpeg: Buffer; width: number; height: number }> {
+  try {
+    const { data, info } = await sharp(buf)
+      .rotate()
+      .flatten({ background: '#ffffff' })
+      .resize({ width: 3000, height: 3000, fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 92 })
+      .toBuffer({ resolveWithObject: true });
+    return { jpeg: data, width: info.width, height: info.height };
+  } catch {
+    throw new DocumentError('Please upload a photo (JPG or PNG).');
+  }
+}
+
+export interface Crop {
+  /** Fractions of the turned picture, 0 to 1. */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+const MM = 72 / 25.4;
+
+/** A sheet of passport photos at their exact size, with light marks to cut along. */
+export async function photoSheet(source: Buffer, crop: Crop, turn: number, paper: PhotoPaper, size: PhotoSize, count: number): Promise<Buffer> {
+  const turned = sharp(source).rotate(turn);
+  const meta = await sharp(await turned.clone().toBuffer()).metadata();
+  const W = meta.width!;
+  const H = meta.height!;
+  const clamp = (v: number, max: number) => Math.min(Math.max(0, Math.round(v)), max);
+  const left = clamp(crop.x * W, W - 1);
+  const top = clamp(crop.y * H, H - 1);
+  const layout = photoLayout(paper, size, count);
+  const slot = layout.slots[0]!;
+  const [pw, ph] = slot.turned ? [slot.h, slot.w] : [slot.w, slot.h];
+  // 600 dpi is sharp for photo paper and keeps the file small.
+  const photo = await turned
+    .extract({ left, top, width: clamp(crop.w * W, W - left) || 1, height: clamp(crop.h * H, H - top) || 1 })
+    .resize(Math.round((pw / 25.4) * 600), Math.round((ph / 25.4) * 600), { fit: 'fill' })
+    .jpeg({ quality: 93 })
+    .toBuffer();
+
+  const doc = await PDFDocument.create();
+  const page = doc.addPage([layout.page.w * MM, layout.page.h * MM]);
+  const image = await doc.embedJpg(photo);
+  const guide = rgb(0.82, 0.82, 0.82);
+  for (const s of layout.slots) {
+    const x = s.x * MM;
+    const y = (layout.page.h - s.y - s.h) * MM; // PDF measures from the bottom
+    page.drawRectangle({ x: x - 0.4, y: y - 0.4, width: s.w * MM + 0.8, height: s.h * MM + 0.8, borderColor: guide, borderWidth: 0.4 });
+    if (s.turned) {
+      // Upright photo turned a quarter clockwise, so it fills the sideways slot.
+      page.drawImage(image, { x, y: y + s.h * MM, width: s.h * MM, height: s.w * MM, rotate: degrees(-90) });
+    } else {
+      page.drawImage(image, { x, y, width: s.w * MM, height: s.h * MM });
+    }
+  }
+  return Buffer.from(await doc.save());
 }
 
 export async function makePrintReady(buf: Buffer, name: string): Promise<PrintReady> {

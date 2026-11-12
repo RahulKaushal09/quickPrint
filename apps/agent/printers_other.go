@@ -8,21 +8,35 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 )
 
 // Simulated printers for developing on macOS/Linux: "printing" copies the
 // PDF into dev-data/outbox/<printer>/ so the whole flow can be tested.
+// List "Printer|Tray" lines in dev-data/empty-trays.txt to make a tray run out
+// of paper ("Printer|*" for the printer's own choice).
 
 func listPrinters() ([]Printer, error) {
 	return []Printer{
-		{Name: "Canon LBP2900", Status: "ready", IsDefault: true},
-		{Name: "Epson L3150 Series", Status: "ready", Duplex: true},
+		{Name: "Canon LBP2900", Status: "ready", IsDefault: true, Trays: []string{"Tray 1", "Manual feed"}},
+		{Name: "Epson L3150 Series", Status: "ready", Duplex: true, Trays: []string{"Rear tray", "Photo tray"}},
 	}, nil
 }
 
-func printFile(o *JobOrder, file string) error {
+func printFile(o *JobOrder, file, tray string, _ func(string)) error {
 	time.Sleep(1500 * time.Millisecond) // feel like a printer
+	want := o.Printer + "|" + tray
+	if tray == "" {
+		want = o.Printer + "|*"
+	}
+	if b, err := os.ReadFile(filepath.Join(dataDir(), "empty-trays.txt")); err == nil {
+		for _, line := range strings.Split(string(b), "\n") {
+			if strings.TrimSpace(line) == want {
+				return &PaperOutError{Reason: "Out of paper"}
+			}
+		}
+	}
 	dir := filepath.Join(dataDir(), "outbox", o.Printer)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -35,7 +49,13 @@ func printFile(o *JobOrder, file string) error {
 	if o.Duplex {
 		sides = "double"
 	}
-	dest := filepath.Join(dir, fmt.Sprintf("%s_%s_%s_%dx_%s.pdf", o.PickupCode, mode, sides, o.Copies, o.JobID))
+	if o.Kind == "photo" {
+		mode = "photo-" + o.Paper
+	}
+	if tray == "" {
+		tray = "auto"
+	}
+	dest := filepath.Join(dir, fmt.Sprintf("%s_%s_%s_%s_%dx_%s.pdf", o.PickupCode, mode, sides, strings.ReplaceAll(tray, " ", "-"), o.Copies, o.JobID))
 	src, err := os.Open(file)
 	if err != nil {
 		return err

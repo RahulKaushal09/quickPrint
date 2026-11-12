@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, Banknote, Eye, MoreHorizontal, RotateCcw, Undo2, X } from 'lucide-react';
+import { AlertTriangle, Banknote, Clock, Eye, MoreHorizontal, RotateCcw, Undo2, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { JobStatus } from '@seedhaprint/shared';
 import { Badge, Button, Field, Input, Modal, StatusPill, useToast } from '@/components/ui';
@@ -15,6 +15,9 @@ export interface ShopJob {
   file: { name: string; pages: number; bytes?: number; available: boolean };
   mode: 'bw' | 'color';
   sides: 'single' | 'double';
+  kind: 'document' | 'photo';
+  photo?: { perSheet: number; paper: string };
+  waiting?: string;
   cash: boolean;
   copies: number;
   rate: number;
@@ -78,13 +81,11 @@ function JobRow({ job, onChange, compact }: { job: ShopJob; onChange: (j: ShopJo
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <p className="truncate font-semibold">{job.file.name}</p>
+          <p className="truncate font-semibold">{job.kind === 'photo' ? 'Passport photos' : job.file.name}</p>
           {job.mockPayment && <Badge className="shrink-0">Test</Badge>}
         </div>
         <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-sm text-ink-mute">
-          <span>
-            {plural(job.file.pages, 'page')} × {job.copies}
-          </span>
+          <span>{job.kind === 'photo' ? `${job.photo?.perSheet} per sheet × ${job.copies}` : `${plural(job.file.pages, 'page')} × ${job.copies}`}</span>
           <span className={cx('inline-flex items-center gap-1 font-semibold', job.mode === 'color' ? 'text-magenta' : 'text-ink-soft')}>
             <span className={cx('size-2 rounded-full', job.mode === 'color' ? 'bg-[conic-gradient(#00a3e0,#e5007d,#ffd200,#00a3e0)]' : 'bg-ink')} />
             {job.mode === 'color' ? 'Colour' : 'B/W'}
@@ -94,6 +95,11 @@ function JobRow({ job, onChange, compact }: { job: ShopJob; onChange: (j: ShopJo
           {!compact && job.printer && <span className="hidden truncate sm:inline">· {job.printer}</span>}
           <span>· {timeAgo(job.paidAt || job.createdAt)}</span>
         </p>
+        {job.waiting && ['sent', 'printing'].includes(job.status) && (
+          <p className="mt-1 flex items-center gap-1 text-xs font-medium text-warn">
+            <Clock className="size-3.5" /> {job.waiting}
+          </p>
+        )}
         {job.error && (
           <p className="mt-1 flex items-center gap-1 text-xs font-medium text-bad">
             <AlertTriangle className="size-3.5" /> {job.error}

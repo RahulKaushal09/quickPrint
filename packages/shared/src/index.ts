@@ -1,6 +1,7 @@
 export * from './jobs';
 export * from './pricing';
 export * from './protocol';
+export * from './photos';
 
 export const BRAND = {
   name: 'SeedhaPrint',

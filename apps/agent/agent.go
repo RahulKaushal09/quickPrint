@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -39,14 +40,14 @@ type Agent struct {
 	since     time.Time
 	printers  []Printer
 	recent    []recentJob
-	queue     chan *JobOrder
+	queues    map[string]chan *JobOrder // one line per printer, so a printer out of paper doesn't hold up the others
 	pending   map[string]bool
 	done      *ledger
 	wake      chan struct{} // re-pairing from the status page restarts the loop immediately
 }
 
 func newAgent(cfg *Config) *Agent {
-	return &Agent{cfg: cfg, queue: make(chan *JobOrder, 200), pending: map[string]bool{}, done: loadLedger(), wake: make(chan struct{}, 1)}
+	return &Agent{cfg: cfg, queues: map[string]chan *JobOrder{}, pending: map[string]bool{}, done: loadLedger(), wake: make(chan struct{}, 1)}
 }
 
 func (a *Agent) config() *Config {
@@ -90,7 +91,6 @@ func wsURL(server string) string {
 }
 
 func (a *Agent) Run() {
-	go a.worker()
 	go a.watchPrinters()
 	backoff := 2 * time.Second
 	for {
@@ -221,50 +221,64 @@ func (a *Agent) session(cfg *Config) error {
 
 func (a *Agent) enqueue(o *JobOrder) {
 	// The server may resend a job after a reconnect. Never print it twice.
-	if status, ok := a.done.get(o.JobID); ok {
-		a.report(o.JobID, "job.accepted", "")
-		a.report(o.JobID, status, a.done.errorFor(o.JobID))
+	if a.done.has(o.JobID) {
+		a.report(o.JobID, "job.accepted", "", "")
+		a.report(o.JobID, "job.printed", "", "")
 		return
 	}
 	a.mu.Lock()
 	if a.pending[o.JobID] {
 		a.mu.Unlock()
-		a.report(o.JobID, "job.accepted", "")
+		a.report(o.JobID, "job.accepted", "", "")
 		return
 	}
 	a.pending[o.JobID] = true
+	q, ok := a.queues[o.Printer]
+	if !ok {
+		q = make(chan *JobOrder, 200)
+		a.queues[o.Printer] = q
+		go a.worker(q)
+	}
 	a.mu.Unlock()
-	a.report(o.JobID, "job.accepted", "")
+	a.report(o.JobID, "job.accepted", "", "")
 	a.track(o, "waiting", "")
-	a.queue <- o
+	q <- o
 }
 
-func (a *Agent) report(jobID, typ, errMsg string) {
-	if err := a.send(jobMessage{Type: typ, JobID: jobID, Error: errMsg}); err != nil {
+func (a *Agent) report(jobID, typ, errMsg, code string) {
+	if err := a.send(jobMessage{Type: typ, JobID: jobID, Error: errMsg, Code: code}); err != nil {
 		logf("could not report %s for %s: %v", typ, jobID, err)
 	}
 }
 
-func (a *Agent) worker() {
+func (a *Agent) worker(queue chan *JobOrder) {
 	work := filepath.Join(dataDir(), "work")
 	_ = os.MkdirAll(work, 0o755)
-	for o := range a.queue {
+	for o := range queue {
 		err := a.printOne(o, work)
-		status, msg := "job.printed", ""
-		if err != nil {
+		status, msg, code := "job.printed", "", ""
+		var out *PaperOutError
+		switch {
+		case errors.As(err, &out):
+			// Nothing came out, so the server may send it to another printer.
+			status, msg, code = "job.failed", err.Error(), "paper_out"
+		case err != nil:
 			status, msg = "job.failed", err.Error()
+		}
+		if err != nil {
 			logf("job %s failed: %v", o.JobID, err)
 		} else {
 			logf("job %s printed on %s (%d copies)", o.JobID, o.Printer, o.Copies)
-		}
-		if !strings.HasPrefix(o.JobID, "test-") {
-			a.done.add(o.JobID, status, msg)
+			if !strings.HasPrefix(o.JobID, "test-") {
+				// Only finished prints are remembered: a failed job must print when it is retried.
+				a.done.add(o.JobID)
+			}
 		}
 		a.mu.Lock()
 		delete(a.pending, o.JobID)
 		a.mu.Unlock()
 		a.track(o, map[string]string{"job.printed": "printed", "job.failed": "failed"}[status], msg)
-		a.report(o.JobID, status, msg)
+		a.report(o.JobID, status, msg, code)
 	}
 }
 
@@ -280,8 +294,13 @@ func (a *Agent) printOne(o *JobOrder, work string) error {
 		return err
 	}
 	a.track(o, "printing", "")
-	a.report(o.JobID, "job.printing", "")
-	return printFile(o, file)
+	a.report(o.JobID, "job.printing", "", "")
+	note := func(n string) {
+		logf("job %s: %s", o.JobID, n)
+		a.track(o, "printing", n)
+		a.report(o.JobID, "job.waiting", n, "")
+	}
+	return printWithTrays(o.Trays, func(tray string) error { return printFile(o, file, tray, note) }, note)
 }
 
 func (a *Agent) track(o *JobOrder, status, errMsg string) {
@@ -320,20 +339,14 @@ func (a *Agent) watchPrinters() {
 
 // ---------------------------------------------------------------- ledger
 
-// The ledger remembers the last few hundred finished jobs on disk, so a job
+// The ledger remembers the last few hundred printed jobs on disk, so a job
 // re-sent after a crash or reconnect is reported instead of printed again.
 
 const ledgerSize = 500
 
-type ledgerItem struct {
-	ID     string `json:"id"`
-	Status string `json:"status"`
-	Error  string `json:"error,omitempty"`
-}
-
 type ledger struct {
 	mu    sync.Mutex
-	Items []ledgerItem `json:"items"`
+	Items []string `json:"printed"`
 }
 
 func ledgerPath() string { return filepath.Join(dataDir(), "printed.json") }
@@ -346,40 +359,25 @@ func loadLedger() *ledger {
 	return l
 }
 
-func (l *ledger) get(id string) (string, bool) {
+func (l *ledger) has(id string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	for _, it := range l.Items {
-		if it.ID == id {
-			return it.Status, true
+		if it == id {
+			return true
 		}
 	}
-	return "", false
+	return false
 }
 
-func (l *ledger) errorFor(id string) string {
+func (l *ledger) add(id string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	for _, it := range l.Items {
-		if it.ID == id {
-			return it.Error
-		}
-	}
-	return ""
-}
-
-func (l *ledger) add(id, status string, errMsg ...string) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	it := ledgerItem{ID: id, Status: status}
-	if len(errMsg) > 0 {
-		it.Error = errMsg[0]
-	}
-	l.Items = append(l.Items, it)
+	l.Items = append(l.Items, id)
 	if len(l.Items) > ledgerSize {
 		l.Items = l.Items[len(l.Items)-ledgerSize:]
 	}
-	if b, err := json.Marshal(l); err == nil && dataDir() != "" {
+	if b, err := json.Marshal(l); err == nil {
 		_ = os.MkdirAll(dataDir(), 0o755)
 		_ = os.WriteFile(ledgerPath(), b, 0o644)
 	}

@@ -44,6 +44,7 @@ shopRoutes.get('/', async (req, res) => {
 
 shopRoutes.patch('/', async (req, res) => {
   const paise = z.number().int().min(0).max(100_000);
+  const names = z.array(z.string().max(200)).max(20);
   const body = z
     .object({
       name: z.string().trim().min(2).max(80),
@@ -52,7 +53,9 @@ shopRoutes.patch('/', async (req, res) => {
       phone: z.string().trim().max(20),
       accepting: z.boolean(),
       rates: z.object({ bwPerPage: paise.min(50), colorPerPage: paise.min(50), colorEnabled: z.boolean(), duplexEnabled: z.boolean() }),
-      printers: z.object({ bw: z.array(z.string().max(200)).max(20), color: z.array(z.string().max(200)).max(20), duplex: z.array(z.string().max(200)).max(20) }),
+      printers: z.object({ bw: names, color: names, duplex: names, photo: names.default([]) }),
+      trays: z.array(z.object({ printer: z.string().min(1).max(200), docs: names, photos: names })).max(40),
+      photos: z.object({ enabled: z.boolean(), size: z.enum(['35x45', '51x51']), paper: z.enum(['4x6', 'A4']), perSheet: z.number().int().min(1).max(60), price: paise.min(100) }),
       cash: z.object({ enabled: z.boolean(), autoPrint: z.boolean() }),
     })
     .partial()
@@ -134,7 +137,7 @@ shopRoutes.post('/jobs/:id/fail', async (req, res) => {
 shopRoutes.post('/jobs/:id/retry', async (req, res) => {
   const job = await myJob(req.shopId!, String(req.params.id));
   if (!job.file.key) throw new HttpError(410, 'The file was already deleted');
-  const next = await transition(job._id, 'queued', { only: ['failed'], note: 'Retry by shop', set: { error: '', deviceId: null, acceptedAt: null } });
+  const next = await transition(job._id, 'queued', { only: ['failed'], note: 'Retry by shop', set: { error: '', waiting: '', deviceId: null, acceptedAt: null, triedPrinters: [] } });
   if (!next) throw new HttpError(409, 'Only failed jobs can be retried');
   void dispatchShop(job.shopId);
   res.json({ job: shopJob(next) });
